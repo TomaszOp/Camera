@@ -20,8 +20,10 @@
 
 // ---------- Serwa ----------
 // Karta SD w trybie 1-bit zajmuje GPIO 2, 14, 15, więc dla serw zostają GPIO 12 i 13.
-// UWAGA: GPIO12 to pin strapping (napięcie flash). Jeśli serwo podciągnie go do stanu
-// wysokiego przy starcie, płytka się nie uruchomi - wtedy zamień piny albo odłącz serwo
-// na czas resetu.
+// UWAGA: GPIO12 to pin strapping - przy starcie wybiera napięcie pamięci flash
+// (stan niski = 3,3 V, prawidłowo). Typowe serwo (SG90, MG90S) tego nie zakłóca, bo jego
+// wejście nie podciąga linii do plusa. Gdyby płytka mimo to nie startowała z podłączonym
+// serwem, dodaj rezystor 10 kΩ między GPIO12 a GND - wymusza stan niski przy starcie
+// i nie przeszkadza w sterowaniu serwem.
 #define SERVO_PAN_PIN  12  // poziom
 #define SERVO_TILT_PIN 13  // pion

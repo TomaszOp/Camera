@@ -91,7 +91,8 @@ Wnioski:
 - Karta musi być sformatowana jako **FAT32** i włożona **przed włączeniem zasilania**. `begin()` wykrywa ją tylko przy starcie.
 - Na ESP32-S3 piny SDMMC można wybrać dowolnie (`SD_MMC.setPins()`), ale ta biblioteka obecnie tego nie obsługuje.
 - GPIO2 musi być w stanie niskim lub nieustalonym przy wgrywaniu firmware. Karta włożona w gniazdo czasem to zakłóca. Jeśli wgrywanie się nie udaje, wyjmij kartę na ten czas.
-- **GPIO12 to pin strapping**, który ustala napięcie pamięci flash. Jeśli serwo podciągnie go do stanu wysokiego przy starcie, płytka się nie uruchomi. Wtedy zamień piny serw albo podłącz serwo przez rezystor lub tranzystor. Serwa zasilaj osobno z 5 V, nie z płytki.
+- **GPIO12 to pin strapping**, który przy starcie ustala napięcie pamięci flash (stan niski = 3,3 V, prawidłowo). Typowe serwo (SG90, MG90S) tego nie zakłóca, bo jego wejście nie podciąga linii do plusa. Gdyby płytka mimo to nie startowała z podłączonym serwem, dodaj **rezystor 10 kΩ między GPIO12 a GND**. Wymusza on stan niski przy starcie i nie przeszkadza w sterowaniu serwem. Rozwiązanie trwałe, ale **nieodwracalne**: `espefuse.py set_flash_voltage 3.3V` ustawia napięcie flash w eFuse, a wtedy GPIO12 przestaje być pinem strapping.
+- Serwa zasilaj osobno z 5 V, nie z płytki.
 - Do serw nie używam biblioteki ESP32Servo, bo sama przydziela timery LEDC i koliduje z kamerą.
 
 ## Serwery poleceń: COM i Telnet
