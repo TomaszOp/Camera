@@ -1,0 +1,58 @@
+#include "CamWifi.h"
+
+#include <Arduino.h>
+#include <ESPmDNS.h>
+#include <WiFi.h>
+
+namespace espcamweb {
+
+bool CamWifi::begin(const WifiSettings &s) {
+  ap_ = false;
+  if (s.ssid && *s.ssid) {
+    WiFi.mode(WIFI_STA);
+    WiFi.setSleep(false);  // oszczędzanie energii WiFi mocno obniża FPS
+    if (s.hostname) WiFi.setHostname(s.hostname);
+    WiFi.begin(s.ssid, s.password);
+    Serial.printf("Łączenie z WiFi \"%s\"", s.ssid);
+
+    uint32_t start = millis();
+    while (WiFi.status() != WL_CONNECTED && millis() - start < s.connectTimeoutMs) {
+      delay(500);
+      Serial.print('.');
+    }
+    Serial.println();
+  }
+
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.printf("Połączono, IP: %s, RSSI: %d dBm\n", WiFi.localIP().toString().c_str(), WiFi.RSSI());
+  } else if (s.apFallback) {
+    Serial.println("Brak połączenia - uruchamiam punkt dostępowy");
+    WiFi.disconnect(true);
+    WiFi.mode(WIFI_AP);
+    WiFi.setSleep(false);
+    if (!WiFi.softAP(s.apSsid, s.apPassword)) {
+      Serial.println("Nie udało się uruchomić punktu dostępowego");
+      return false;
+    }
+    ap_ = true;
+    Serial.printf("AP \"%s\" (hasło %s), IP: %s\n", s.apSsid, s.apPassword,
+                  WiFi.softAPIP().toString().c_str());
+  } else {
+    Serial.println("Brak połączenia WiFi");
+    return false;
+  }
+
+  if (s.hostname && MDNS.begin(s.hostname)) {
+    MDNS.addService("http", "tcp", s.mdnsHttpPort);
+    Serial.printf("mDNS: http://%s.local\n", s.hostname);
+  }
+  return true;
+}
+
+bool CamWifi::isConnected() const { return !ap_ && WiFi.status() == WL_CONNECTED; }
+
+IPAddress CamWifi::ip() const { return ap_ ? WiFi.softAPIP() : WiFi.localIP(); }
+
+int CamWifi::rssi() const { return isConnected() ? WiFi.RSSI() : 0; }
+
+}  // namespace espcamweb

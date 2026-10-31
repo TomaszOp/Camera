@@ -1,0 +1,16 @@
+{
+  "name": "EspCamWeb",
+  "version": "1.0.0",
+  "description": "Podgląd kamery ESP32-CAM na żywo przez WWW (MJPEG, sterowanie, FPS). / Live ESP32-CAM camera preview over the web (MJPEG stream, controls, FPS counter).",
+  "keywords": "esp32, esp32-cam, camera, ov2640, mjpeg, stream, webserver",
+  "frameworks": "arduino",
+  "platforms": "espressif32",
+  "headers": "EspCamWeb.h",
+  "examples": [
+    {
+      "name": "Basic",
+      "base": "examples/Basic",
+      "files": ["main.cpp"]
+    }
+  ]
+}

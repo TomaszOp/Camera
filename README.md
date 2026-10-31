@@ -2,6 +2,8 @@
 
 Projekt PlatformIO dla **ESP32-CAM AI Thinker** (OV2640, 4 MB PSRAM). Uruchamia stronę WWW z podglądem MJPEG na żywo, licznikiem FPS i sterowaniem kamerą.
 
+Cały kod kamery i serwera jest w bibliotece wielokrotnego użytku **`lib/EspCamWeb`** (opis API i sposób dodania do innych projektów: [lib/EspCamWeb/README.md](lib/EspCamWeb/README.md)). `src/main.cpp` to tylko krótki przykład, który jawnie tworzy kamerę (`EspCamera`), lampę, WiFi i serwer WWW (`CamWebServer`).
+
 - Framework: Arduino core 3.x (platforma [pioarduino](https://github.com/pioarduino/platform-espressif32), ESP-IDF 5.x)
 - Serwer: `esp_http_server` z ESP-IDF, dwie instancje:
   - port **80** – strona, `/control`, `/status`, `/capture`
