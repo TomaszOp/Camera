@@ -5,7 +5,7 @@
 
 // ---------- Moduły ----------
 #define LED_ON          1  // lampa LED błysku
-#define SD_ON           0  // karta microSD do zapisu zdjęć (SD_MMC, tryb 1-bit)
+#define SD_ON           1  // karta microSD do zapisu zdjęć (gniazdo na płytce, SD_MMC, tryb 1-bit)
 #define SERVO_MOTORS_ON 0  // dwa serwa: poziom (pan) i pion (tilt)
 
 // ---------- Lampa LED ----------

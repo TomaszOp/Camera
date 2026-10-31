@@ -14,7 +14,7 @@ Cały kod kamery i serwera jest w bibliotece wielokrotnego użytku **`lib/EspCam
 | Wpis | Domyślnie | Co robi |
 |---|---|---|
 | `LED_ON` | 1 | lampa LED błysku (GPIO4) |
-| `SD_ON` | 0 | karta microSD, przycisk „Zapisz zdjęcie na SD”, zdjęcia w `/photos/IMG_00001.jpg`… |
+| `SD_ON` | 1 | karta microSD, przycisk „Zapisz zdjęcie na SD”, zdjęcia w `/photos/IMG_00001.jpg`… |
 | `SERVO_MOTORS_ON` | 0 | dwa serwa: poziom `SERVO_PAN_PIN` (12) i pion `SERVO_TILT_PIN` (13) |
 
 Wyłączony moduł nie jest kompilowany, a strona nie pokazuje jego przycisków. Przycisków nie ma też wtedy, gdy moduł jest włączony, ale nie działa (np. brak karty w slocie).
