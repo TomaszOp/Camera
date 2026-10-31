@@ -1,4 +1,7 @@
-// Strona HTML podglądu (PROGMEM)
+/**
+ * @file CamWebPage.cpp
+ * @brief Preview page HTML/CSS/JS stored in flash (PROGMEM). The page text itself is user-facing (Polish).
+ */
 #include "CamWebPage.h"
 
 namespace espcamweb {

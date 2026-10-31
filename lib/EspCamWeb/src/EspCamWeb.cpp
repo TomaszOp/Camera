@@ -1,3 +1,7 @@
+/**
+ * @file EspCamWeb.cpp
+ * @brief EspCamWeb facade implementation: start-up order and loop servicing.
+ */
 #include "EspCamWeb.h"
 
 #include <Arduino.h>
@@ -11,7 +15,7 @@ bool EspCamWeb::begin(const EspCamWebConfig &config) {
   camera_.attachLed(led_);
 #endif
   if (!camera_.begin(config.camera)) return false;
-  // Brak karty lub serw nie jest błędem krytycznym - usługa po prostu nie będzie dostępna
+  // A missing card or servo failure is not fatal - the service is simply unavailable
 #if SD_ON
   sd_.begin(config.sd);
   camera_.attachSd(sd_);

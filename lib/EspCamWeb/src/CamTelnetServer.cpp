@@ -1,3 +1,7 @@
+/**
+ * @file CamTelnetServer.cpp
+ * @brief CamTelnetServer implementation: ESPTelnet callbacks, password check, command execution.
+ */
 #include "CamTelnetServer.h"
 
 #if TELNET_SERVER_ON
@@ -6,17 +10,29 @@ namespace espcamweb {
 
 CamTelnetServer *CamTelnetServer::instance_ = nullptr;
 
-// Print kierujący wyjście CamCommands do klienta telnet
+/**
+ * @brief Print adapter that sends CamCommands output to the Telnet client.
+ *
+ * ESPTelnet is not a Print, while CamCommands writes to Print&.
+ */
 class TelnetPrint : public Print {
  public:
+  /// @brief Wraps a Telnet server. @param telnet Server whose client receives the output.
   explicit TelnetPrint(ESPTelnet &telnet) : telnet_(telnet) {}
+  /// @brief Sends one byte. @param c Byte. @return Bytes written.
   size_t write(uint8_t c) override { return telnet_.write(c); }
+  /// @brief Sends a buffer. @param buf Data. @param len Length. @return Bytes written.
   size_t write(const uint8_t *buf, size_t len) override { return telnet_.write(buf, len); }
 
  private:
-  ESPTelnet &telnet_;
+  ESPTelnet &telnet_;  ///< Target server.
 };
 
+/**
+ * @brief Checks whether a password is configured.
+ * @param password TelnetSettings::password.
+ * @return true for a non-empty string.
+ */
 static bool hasPassword(const char *password) { return password && *password; }
 
 bool CamTelnetServer::begin(const TelnetSettings &settings) {
@@ -26,7 +42,7 @@ bool CamTelnetServer::begin(const TelnetSettings &settings) {
   telnet_.onDisconnect(onDisconnect);
   telnet_.onConnectionAttempt(onConnectionAttempt);
   telnet_.onInputReceived(onInput);
-  // false: bez sprawdzania WiFi w bibliotece - działa też w trybie AP
+  // false: skip the library's WiFi check - works in access point mode too
   if (!telnet_.begin(s_.port, false)) {
     Serial.printf("Telnet: nie udało się uruchomić na porcie %u\n", s_.port);
     return false;

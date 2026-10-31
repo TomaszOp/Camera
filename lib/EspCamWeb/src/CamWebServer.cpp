@@ -1,3 +1,7 @@
+/**
+ * @file CamWebServer.cpp
+ * @brief CamWebServer implementation: httpd set-up and URI handlers.
+ */
 #include "CamWebServer.h"
 
 #include <Arduino.h>
@@ -8,11 +12,20 @@
 
 namespace espcamweb {
 
+/// Multipart boundary separating JPEG frames in the MJPEG stream.
 #define ECW_PART_BOUNDARY "123456789000000000000987654321"
+/// Content-Type of the MJPEG stream response.
 static const char *STREAM_CONTENT_TYPE = "multipart/x-mixed-replace;boundary=" ECW_PART_BOUNDARY;
+/// Boundary line written before every frame.
 static const char *STREAM_BOUNDARY = "\r\n--" ECW_PART_BOUNDARY "\r\n";
+/// Per-frame part header; %u = JPEG length.
 static const char *STREAM_PART = "Content-Type: image/jpeg\r\nContent-Length: %u\r\n\r\n";
 
+/**
+ * @brief Recovers the server object stored in the request's user context.
+ * @param req Request.
+ * @return The CamWebServer that registered the handler.
+ */
 static CamWebServer *self(httpd_req_t *req) { return static_cast<CamWebServer *>(req->user_ctx); }
 
 bool CamWebServer::begin(const ServerSettings &settings) {
@@ -36,7 +49,7 @@ bool CamWebServer::begin(const ServerSettings &settings) {
   }
   for (const httpd_uri_t &uri : uris) httpd_register_uri_handler(webHttpd_, &uri);
 
-  // Osobna instancja: strumień blokuje swoje zadanie, więc nie może dzielić go ze stroną
+  // Separate instance: the stream blocks its task, so it cannot share it with the page
   config.server_port = settings_.streamPort;
   config.ctrl_port += 1;
   const httpd_uri_t streamUri = {"/stream", HTTP_GET, streamHandler, this};

@@ -1,3 +1,7 @@
+/**
+ * @file CamLed.cpp
+ * @brief CamLed implementation: LEDC PWM for the flash LED.
+ */
 #include "CamLed.h"
 
 #if LED_ON
@@ -10,7 +14,7 @@ void CamLed::begin(const LedSettings &settings) {
   pin_ = settings.pin;
   dutyOn_ = settings.dutyOn;
   if (pin_ < 0) return;
-  // Jawny kanał: ledcAttach mógłby zająć kanał 0, na którym kamera generuje XCLK
+  // Explicit channel: ledcAttach could pick channel 0, which generates the camera XCLK
   ledcAttachChannel(pin_, settings.freq, settings.resolutionBits, settings.channel);
   set(false);
 }

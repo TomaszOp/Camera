@@ -1,10 +1,14 @@
+/**
+ * @file CamComServer.cpp
+ * @brief CamComServer implementation: non-blocking line editor on a serial stream.
+ */
 #include "CamComServer.h"
 
 #if COM_SERVER_ON
 
 namespace espcamweb {
 
-static const unsigned MAX_LINE = 128;
+static const unsigned MAX_LINE = 128;  ///< Longest accepted command line; extra characters are dropped.
 
 void CamComServer::begin(const ComServerSettings &settings) {
   s_ = settings;
@@ -22,9 +26,9 @@ void CamComServer::handle() {
     if (c == '\r' || c == '\n') {
       bool crlf = c == '\n' && lastWasCr_;
       lastWasCr_ = c == '\r';
-      if (crlf) continue;  // druga połowa CR LF
+      if (crlf) continue;  // second half of CR LF
       io_.print("\r\n");
-      commands_.execute(line_, io_);  // quit/exit nie dotyczy portu szeregowego
+      commands_.execute(line_, io_);  // quit/exit does not apply to a serial port
       line_ = "";
       prompt();
       continue;

@@ -1,8 +1,11 @@
-// Serwer poleceń Telnet. Logicznie na równi z CamWebServer: zależy wyłącznie od EspCamera,
-// polecenia (te same co na COM) wykonuje CamCommands.
-// Core Arduino nie ma serwera telnet (jest tylko surowy WiFiServer), dlatego używa biblioteki
-// ESPTelnet (lennarthennigs/ESP Telnet): jeden klient naraz, tryb liniowy.
-// Telnet nie szyfruje - hasło i polecenia idą jawnym tekstem; używać tylko w zaufanej sieci.
+/**
+ * @file CamTelnetServer.h
+ * @brief Telnet command server. Compiled only when TELNET_SERVER_ON is 1.
+ *
+ * The Arduino core has no Telnet server (only a raw WiFiServer), so this uses the ESPTelnet
+ * library (lennarthennigs/ESP Telnet): one client at a time, line mode.
+ * Telnet is not encrypted - password and commands travel as plain text; use only on trusted networks.
+ */
 #pragma once
 
 #include <Arduino.h>
@@ -15,28 +18,55 @@
 
 namespace espcamweb {
 
+/**
+ * @brief Accepts a Telnet client and executes its lines with CamCommands (same commands as COM).
+ *
+ * A front-end on par with CamWebServer: depends only on EspCamera.
+ * Serviced from loop() via handle(). Optional password, banner on connect, quit/exit to disconnect.
+ */
 class CamTelnetServer {
  public:
+  /**
+   * @brief Binds the server to a camera.
+   * @param camera Camera the commands operate on; must outlive the server.
+   */
   explicit CamTelnetServer(EspCamera &camera) : commands_(camera) {}
 
-  // Wywołać po uruchomieniu WiFi (STA lub AP). Działa tylko jedna instancja naraz.
+  /**
+   * @brief Starts listening. Call after WiFi is up (station or AP). Only one instance may run at a time.
+   * @param settings Port and optional password.
+   * @return false if the server could not be started.
+   */
   bool begin(const TelnetSettings &settings = TelnetSettings());
-  void handle();  // wywoływać często w loop()
+
+  /// @brief Accepts connections and processes input. Call often from loop().
+  void handle();
+
+  /// @return true if a client is connected.
   bool isClientConnected() { return telnet_.isConnected(); }
 
  private:
-  // ESPTelnet przyjmuje zwykłe wskaźniki do funkcji, stąd statyczne callbacki
+  // ESPTelnet accepts plain function pointers only, hence static callbacks using instance_.
+
+  /// @brief Client connected: resets authorisation, prints the banner and prompt. @param ip Client IP.
   static void onConnect(String ip);
+  /// @brief Client disconnected: logs it and clears authorisation. @param ip Client IP.
   static void onDisconnect(String ip);
+  /// @brief Second client rejected while one is connected: logs it. @param ip Rejected IP.
   static void onConnectionAttempt(String ip);
+  /**
+   * @brief Full line received: checks the password first, then executes commands.
+   * @param line Line without the line ending.
+   */
   static void onInput(String line);
+  /// @brief Prints "> " when logged in, otherwise the password prompt.
   void prompt();
 
-  static CamTelnetServer *instance_;
-  ESPTelnet telnet_;
-  CamCommands commands_;
-  TelnetSettings s_;
-  bool authorized_ = false;
+  static CamTelnetServer *instance_;  ///< Running instance for the static callbacks.
+  ESPTelnet telnet_;                  ///< Telnet server from the ESPTelnet library.
+  CamCommands commands_;              ///< Shared command interpreter.
+  TelnetSettings s_;                  ///< Port and password.
+  bool authorized_ = false;           ///< Client passed the password check (or none is set).
 };
 
 }  // namespace espcamweb

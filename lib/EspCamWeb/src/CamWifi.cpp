@@ -1,3 +1,7 @@
+/**
+ * @file CamWifi.cpp
+ * @brief CamWifi implementation: station connection, AP fallback, mDNS.
+ */
 #include "CamWifi.h"
 
 #include <Arduino.h>
@@ -10,7 +14,7 @@ bool CamWifi::begin(const WifiSettings &s) {
   ap_ = false;
   if (s.ssid && *s.ssid) {
     WiFi.mode(WIFI_STA);
-    WiFi.setSleep(false);  // oszczędzanie energii WiFi mocno obniża FPS
+    WiFi.setSleep(false);  // WiFi power saving heavily reduces FPS
     if (s.hostname) WiFi.setHostname(s.hostname);
     WiFi.begin(s.ssid, s.password);
     Serial.printf("Łączenie z WiFi \"%s\"", s.ssid);

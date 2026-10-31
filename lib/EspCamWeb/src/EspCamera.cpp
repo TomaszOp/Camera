@@ -1,18 +1,31 @@
+/**
+ * @file EspCamera.cpp
+ * @brief EspCamera implementation: sensor set-up, capture, settings, FPS and optional services.
+ */
 #include "EspCamera.h"
 
 #include <Arduino.h>
 
 namespace espcamweb {
+/**
+ * @brief RAII guard for EspCamera's recursive state mutex.
+ *
+ * Takes the mutex in the constructor and gives it back in the destructor, so a method body
+ * is protected for its whole scope. Recursive, so locked methods may call each other.
+ */
 class EspCameraLock {
  public:
+  /// @brief Waits for and takes the camera's mutex. @param cam Camera to lock.
   explicit EspCameraLock(const EspCamera &cam) : m_(cam.mutex_) { xSemaphoreTakeRecursive(m_, portMAX_DELAY); }
+  /// @brief Releases the mutex.
   ~EspCameraLock() { xSemaphoreGiveRecursive(m_); }
 
  private:
-  SemaphoreHandle_t m_;
+  SemaphoreHandle_t m_;  ///< Locked mutex.
 };
 }  // namespace espcamweb
 
+/// Locks the camera state until the end of the enclosing scope (use inside EspCamera methods).
 #define ECW_LOCK EspCameraLock lock(*this)
 
 namespace espcamweb {
@@ -43,8 +56,8 @@ bool EspCamera::begin(const CameraSettings &s) {
 
   hasPsram_ = psramFound();
   if (hasPsram_) {
-    // Bufory alokowane dla największej dopuszczalnej rozdzielczości, potem przełączamy
-    // na startową - dzięki temu zmiana rozdzielczości nie przepełni bufora.
+    // Buffers are allocated for the largest allowed resolution, then we switch to the start
+    // resolution - this way changing the resolution later can never overflow the buffer.
     maxFrameSize_ = s.maxFrameSize > s.frameSize ? s.maxFrameSize : s.frameSize;
     config.frame_size = maxFrameSize_;
     config.fb_count = s.fbCount;
@@ -119,7 +132,7 @@ void EspCamera::updateFps(uint32_t nowMs) {
   fpsLastMs_ = nowMs;
 }
 
-// ---------- Lampa LED ----------
+// ---------- LED lamp ----------
 #if LED_ON
 bool EspCamera::hasLed() const { return led_ && led_->isAvailable(); }
 bool EspCamera::ledOn() const { return hasLed() && led_->isOn(); }
@@ -135,7 +148,7 @@ bool EspCamera::ledOn() const { return false; }
 bool EspCamera::setLed(bool) { return false; }
 #endif
 
-// ---------- Karta SD ----------
+// ---------- SD card ----------
 #if SD_ON
 bool EspCamera::hasSd() const { return sd_ && sd_->isAvailable(); }
 uint32_t EspCamera::sdPhotoCount() const { return hasSd() ? sd_->photoCount() : 0; }
@@ -164,7 +177,7 @@ String EspCamera::savePhotoToSd(size_t *) { return String(); }
 uint32_t EspCamera::sdListPhotos(Print &, uint32_t) const { return 0; }
 #endif
 
-// ---------- Serwa ----------
+// ---------- Servos ----------
 #if SERVO_MOTORS_ON
 bool EspCamera::hasServos() const { return servos_ && servos_->isAvailable(); }
 int EspCamera::pan() const { return hasServos() ? servos_->pan() : -1; }

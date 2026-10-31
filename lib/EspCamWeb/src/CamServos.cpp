@@ -1,3 +1,7 @@
+/**
+ * @file CamServos.cpp
+ * @brief CamServos implementation: angle to pulse width conversion on LEDC.
+ */
 #include "CamServos.h"
 
 #if SERVO_MOTORS_ON
@@ -6,9 +10,9 @@
 
 namespace espcamweb {
 
-static const uint32_t SERVO_FREQ = 50;  // okres 20 ms
-static const uint8_t SERVO_RES_BITS = 14;
-static const uint32_t SERVO_PERIOD_US = 1000000 / SERVO_FREQ;
+static const uint32_t SERVO_FREQ = 50;                         ///< Servo PWM frequency, Hz (20 ms period).
+static const uint8_t SERVO_RES_BITS = 14;                      ///< PWM resolution (~1.2 µs per step).
+static const uint32_t SERVO_PERIOD_US = 1000000 / SERVO_FREQ;  ///< PWM period, µs.
 
 bool CamServos::begin(const ServoSettings &settings) {
   s_ = settings;

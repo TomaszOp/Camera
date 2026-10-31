@@ -1,3 +1,7 @@
+/**
+ * @file CamSdCard.cpp
+ * @brief CamSdCard implementation: SD_MMC mounting, numbered JPEG files, listing.
+ */
 #include "CamSdCard.h"
 
 #if SD_ON
@@ -23,7 +27,7 @@ bool CamSdCard::begin(const SdSettings &s) {
     return false;
   }
 
-  // Najwyższy istniejący numer zdjęcia -> następny wolny
+  // Highest existing photo number -> next free number
   File dir = SD_MMC.open(photoDir_);
   for (File f = dir.openNextFile(); f; f = dir.openNextFile()) {
     unsigned n;
@@ -64,9 +68,10 @@ String CamSdCard::savePhoto(const uint8_t *data, size_t len) {
 
 uint32_t CamSdCard::listPhotos(Print &out, uint32_t maxCount) const {
   if (!mounted_ || !maxCount) return 0;
+  /// One photo file found in the directory.
   struct Entry {
-    unsigned n;
-    size_t size;
+    unsigned n;   ///< Number from the IMG_nnnnn.jpg name.
+    size_t size;  ///< File size in bytes.
   };
   std::vector<Entry> photos;
   File dir = SD_MMC.open(photoDir_);

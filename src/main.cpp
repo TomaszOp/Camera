@@ -1,8 +1,12 @@
-// ESP32-CAM AI Thinker - podgląd kamery na żywo przez WWW (biblioteka EspCamWeb).
-// EspCamera jest centrum: lampa, karta SD i serwa są do niej dołączane, a serwer WWW
-// dostaje tylko referencję do kamery. Serwery poleceń COM i Telnet są, tak jak strona WWW,
-// dodatkami korzystającymi z kamery. Moduły i serwery włącza się w lib/EspCamWeb/src/EspCamFeatures.h.
-// Krótsza wersja przez fasadę EspCamWeb: lib/EspCamWeb/examples/Basic/main.cpp
+/**
+ * @file main.cpp
+ * @brief ESP32-CAM AI Thinker - live camera preview over the web (EspCamWeb library).
+ *
+ * EspCamera is the hub: the lamp, SD card and servos are attached to it, and the web server
+ * gets only a reference to the camera. The COM and Telnet command servers are, like the web page,
+ * front-ends using the camera. Modules and servers are enabled in lib/EspCamWeb/src/EspCamFeatures.h.
+ * Shorter version using the EspCamWeb facade: lib/EspCamWeb/examples/Basic/main.cpp
+ */
 
 #include <Arduino.h>
 #include <EspCamWeb.h>
@@ -11,35 +15,39 @@
 
 using namespace espcamweb;
 
-static EspCamera camera;
-static CamWifi wifi;
-static CamWebServer server(camera);
+static EspCamera camera;             ///< The camera - hub of all services.
+static CamWifi wifi;                 ///< WiFi station / fallback AP.
+static CamWebServer server(camera);  ///< Web page, API and MJPEG stream.
 #if COM_SERVER_ON
-static CamComServer com(camera);  // Serial
+static CamComServer com(camera);  ///< Commands over Serial.
 #endif
 #if TELNET_SERVER_ON
-static CamTelnetServer telnet(camera);
+static CamTelnetServer telnet(camera);  ///< Commands over Telnet.
 #endif
 #if LED_ON
-static CamLed led;
+static CamLed led;  ///< Flash LED.
 #endif
 #if SD_ON
-static CamSdCard sd;
+static CamSdCard sd;  ///< SD card for photos.
 #endif
 #if SERVO_MOTORS_ON
-static CamServos servos;
+static CamServos servos;  ///< Pan/tilt servos.
 #endif
 
+/**
+ * @brief Starts the lamp, camera (restarts the board on failure), SD card, servos, WiFi,
+ *        web server, Telnet and COM servers, and prints the addresses to Serial.
+ */
 void setup() {
   Serial.begin(115200);
   Serial.println("\nESP32-CAM start");
 
 #if LED_ON
-  led.begin(LedSettings());  // LED_PIN, kanał LEDC 2
+  led.begin(LedSettings());  // LED_PIN, LEDC channel 2
   camera.attachLed(led);
 #endif
 
-  CameraSettings cam;  // domyślnie: piny AI Thinker, VGA, jakość 12, 2 bufory, bufory na XGA
+  CameraSettings cam;  // defaults: AI Thinker pins, VGA, quality 12, 2 buffers sized for XGA
   if (!camera.begin(cam)) {
     Serial.println("Restart za 5 s...");
     delay(5000);
@@ -47,11 +55,11 @@ void setup() {
   }
 
 #if SD_ON
-  sd.begin(SdSettings());  // tryb 1-bit, zdjęcia w /photos
+  sd.begin(SdSettings());  // 1-bit mode, photos in /photos
   camera.attachSd(sd);
 #endif
 #if SERVO_MOTORS_ON
-  servos.begin(ServoSettings());  // SERVO_PAN_PIN / SERVO_TILT_PIN, kanały LEDC 4 i 5
+  servos.begin(ServoSettings());  // SERVO_PAN_PIN / SERVO_TILT_PIN, LEDC channels 4 and 5
   camera.attachServos(servos);
 #endif
 
@@ -62,9 +70,9 @@ void setup() {
   WifiSettings net;
   net.ssid = WIFI_SSID;
   net.password = WIFI_PASS;
-  wifi.begin(net);  // brak połączenia w 15 s -> AP "ESP32-CAM" / 12345678
+  wifi.begin(net);  // no connection within 15 s -> AP "ESP32-CAM" / 12345678
 
-  ServerSettings web;  // porty 80 (strona) i 81 (strumień)
+  ServerSettings web;  // ports 80 (page) and 81 (stream)
   server.begin(web);
 #if TELNET_SERVER_ON
   telnet.begin(TelnetSettings());  // TELNET_PORT, TELNET_PASSWORD
@@ -78,6 +86,10 @@ void setup() {
 #endif
 }
 
+/**
+ * @brief Updates FPS, services the COM and Telnet servers and, without the COM server,
+ *        prints FPS to Serial every 5 s.
+ */
 void loop() {
   static uint32_t lastLog = millis(), lastFrames = 0;
   uint32_t now = millis();
@@ -89,7 +101,7 @@ void loop() {
   telnet.handle();
 #endif
 
-  // Bez serwera COM: FPS co 5 s na Serial (z serwerem pokazują go polecenia cam/status)
+  // Without the COM server: FPS every 5 s on Serial (with it, the cam/status commands show FPS)
   if (!COM_SERVER_ON && now - lastLog >= 5000) {
     uint32_t total = camera.frameCount();
     Serial.printf("FPS: %.1f, klienci: %u, wolna PSRAM: %u KB\n",
@@ -98,5 +110,5 @@ void loop() {
     lastFrames = total;
     lastLog = now;
   }
-  delay(10);  // krótko - serwery COM/Telnet obsługiwane są w loop()
+  delay(10);  // short - the COM/Telnet servers are serviced in loop()
 }

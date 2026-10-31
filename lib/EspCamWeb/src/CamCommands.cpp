@@ -1,3 +1,7 @@
+/**
+ * @file CamCommands.cpp
+ * @brief CamCommands implementation: tokenizer and handlers of all text commands.
+ */
 #include "CamCommands.h"
 
 #include <WiFi.h>
@@ -6,17 +10,27 @@
 
 namespace espcamweb {
 
-static const int MAX_ARGS = 4;
-static const int SERVO_STEP = 10;  // domyślny krok dla servo left/right/up/down
+static const int MAX_ARGS = 4;     ///< Maximum number of words parsed from a line (command + 3 arguments).
+static const int SERVO_STEP = 10;  ///< Default step for servo left/right/up/down, degrees.
 
+/**
+ * @brief Prints the reply for a command whose service is disabled or not working.
+ * @param out     Output.
+ * @param service Service name shown to the user.
+ */
 static void unavailable(Print &out, const char *service) {
   out.printf("Usługa niedostępna: %s (wyłączona w EspCamFeatures.h lub nie działa)\r\n", service);
 }
 
+/**
+ * @brief Formats a boolean state for replies.
+ * @param v State.
+ * @return "wł." (on) or "wył." (off).
+ */
 static const char *onOff(bool v) { return v ? "wł." : "wył."; }
 
 CamCommands::Result CamCommands::execute(const String &line, Print &out) {
-  // Pomija śmieci przed poleceniem (np. bajty negocjacji telnetu w pierwszej linii)
+  // Skip garbage before the command (e.g. Telnet negotiation bytes in the first line)
   unsigned start = 0;
   while (start < line.length() && !isAlpha(line[start])) start++;
 
