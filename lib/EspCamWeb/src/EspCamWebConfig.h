@@ -121,6 +121,13 @@ struct TelnetSettings {
   const char *password = TELNET_PASSWORD;  ///< "" = no password; Telnet encrypts nothing.
 };
 
+/// OTA firmware update settings (CamOta::begin()).
+struct OtaSettings {
+  uint16_t port = OTA_PORT;             ///< ArduinoOTA port.
+  const char *password = OTA_PASSWORD;  ///< "" = no password.
+  const char *hostname = OTA_HOSTNAME;  ///< Name announced over mDNS (should match WifiSettings::hostname).
+};
+
 /// Complete configuration for the EspCamWeb facade.
 struct EspCamWebConfig {
   CameraSettings camera;    ///< Camera sensor and buffers.
@@ -131,6 +138,7 @@ struct EspCamWebConfig {
   ServerSettings server;    ///< Web server ports.
   ComServerSettings com;    ///< Serial commands (used when COM_SERVER_ON).
   TelnetSettings telnet;    ///< Telnet commands (used when TELNET_SERVER_ON).
+  OtaSettings ota;          ///< OTA firmware update (used when OTA_ON).
   /// How often to print FPS to Serial, 0 = never. Disabled by default with the serial command
   /// server so logs do not interrupt typing (the cam and status commands show FPS).
   uint32_t fpsLogIntervalMs = COM_SERVER_ON ? 0 : 5000;

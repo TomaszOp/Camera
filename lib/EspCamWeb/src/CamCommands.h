@@ -75,6 +75,8 @@ class CamCommands {
    * @param out  Output.
    */
   void servo(const String *args, int n, Print &out);
+  /// @brief "ota" - OTA state: enabled, password set, running/next partition, free slot size. @param out Output.
+  void ota(Print &out);
   /// @brief "photo" - saves a photo to SD, or reports the frame size without a card. @param out Output.
   void photo(Print &out);
   /**

@@ -20,6 +20,15 @@
 // ---------- WiFi settings ----------
 #define WIFI_SETTINGS_ON 1  ///< WiFi mode/SSID/password saved in NVS, editable via /wifi, COM and Telnet.
 
+// ---------- OTA firmware update ----------
+#define OTA_ON           1     ///< Firmware upload over WiFi: PlatformIO/ArduinoOTA and the /update web page.
+                               ///< Needs a partition table with two app slots (min_spiffs.csv).
+#define OTA_PORT         3232  ///< ArduinoOTA port (espota default).
+#define OTA_HOSTNAME     "esp32cam"  ///< mDNS name for OTA (same as the WiFi hostname): esp32cam.local
+/// OTA password for PlatformIO (upload_flags --auth=...) and the /update page (HTTP Basic Auth, any user name).
+/// CHANGE IT (and in platformio.ini). "" = no password - anyone on the LAN could flash firmware.
+#define OTA_PASSWORD     "esp32cam-ota"
+
 // ---------- Command servers (same commands: help, info, led, servo, photo...) ----------
 #define COM_SERVER_ON    1  ///< Commands over the serial port (pio device monitor).
 #define TELNET_SERVER_ON 1  ///< Commands over Telnet: telnet esp32cam.local

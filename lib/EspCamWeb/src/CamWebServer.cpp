@@ -6,6 +6,9 @@
 
 #include <Arduino.h>
 #include <WiFi.h>
+#if OTA_ON
+#include <mbedtls/base64.h>
+#endif
 
 #include "CamWebPage.h"
 #include "EspCamera.h"
@@ -47,6 +50,10 @@ bool CamWebServer::begin(const ServerSettings &settings) {
       {"/wifi/settings", HTTP_GET, wifiSettingsHandler, this},
       {"/wifi/save", HTTP_POST, wifiSaveHandler, this},
       {"/wifi/clear", HTTP_POST, wifiClearHandler, this},
+#endif
+#if OTA_ON
+      {"/update", HTTP_GET, updatePageHandler, this},
+      {"/update", HTTP_POST, updateUploadHandler, this},
 #endif
   };
   if (httpd_start(&webHttpd_, &config) != ESP_OK) {
@@ -124,12 +131,12 @@ esp_err_t CamWebServer::statusHandler(httpd_req_t *req) {
 
   char json[640];
   snprintf(json, sizeof(json),
-           "{\"features\":{\"led\":%d,\"sd\":%d,\"servos\":%d,\"settings\":%d},"
+           "{\"features\":{\"led\":%d,\"sd\":%d,\"servos\":%d,\"settings\":%d,\"ota\":%d},"
            "\"sdPhotos\":%u,\"sdFreeMB\":%u,\"sdLast\":\"%s\",\"pan\":%d,\"tilt\":%d,"
            "\"fps\":%.1f,\"framesize\":%d,\"maxFramesize\":%d,\"name\":\"%s\",\"width\":%u,\"height\":%u,"
            "\"quality\":%d,\"led\":%d,\"vflip\":%d,\"hmirror\":%d,\"rssi\":%d,"
            "\"psram\":%d,\"clients\":%u,\"streamPort\":%u,\"mode\":\"%s\",\"ip\":\"%s\"}",
-           f.led, f.sd, f.servos, f.settings, (unsigned)cam.sdPhotoCount(), (unsigned)(cam.sdFreeBytes() >> 20),
+           f.led, f.sd, f.servos, f.settings, f.ota, (unsigned)cam.sdPhotoCount(), (unsigned)(cam.sdFreeBytes() >> 20),
            last.c_str(), cam.pan(), cam.tilt(), cam.fps(), (int)fs, (int)cam.maxFrameSize(), EspCamera::frameSizeName(fs),
            resolution[fs].width, resolution[fs].height, cam.quality(), cam.ledOn(), cam.vflip(), cam.hmirror(), ap ? 0 : (int)WiFi.RSSI(),
            cam.hasPsram(), (unsigned)srv->streamClients_, srv->settings_.streamPort, ap ? "AP" : "STA",
@@ -192,6 +199,10 @@ esp_err_t CamWebServer::streamHandler(httpd_req_t *req) {
   Serial.printf("Stream: client connected (%u)\n", (unsigned)++srv->streamClients_);
 
   while (true) {
+    if (cam.otaInProgress()) {  // free bandwidth and CPU for the firmware update
+      res = ESP_FAIL;
+      break;
+    }
     camera_fb_t *fb = cam.capture();
     if (!fb) {
       Serial.println("Frame capture failed");
@@ -210,7 +221,7 @@ esp_err_t CamWebServer::streamHandler(httpd_req_t *req) {
   return res;
 }
 
-#if WIFI_SETTINGS_ON
+#if WIFI_SETTINGS_ON || OTA_ON
 /**
  * @brief Escapes a string for use inside a JSON string literal (quotes, backslash, control characters).
  * @param in Raw text (e.g. an SSID, which may contain any characters).
@@ -236,6 +247,24 @@ static String jsonEscape(const String &in) {
 }
 
 /**
+ * @brief Sends a small JSON reply {"ok":..,"message":".."} with an HTTP status.
+ * @param req     Request.
+ * @param status  HTTP status line, e.g. "200 OK".
+ * @param ok      Value of the "ok" field.
+ * @param message Message for the user (escaped here).
+ * @return Result of httpd_resp_sendstr().
+ */
+static esp_err_t sendResult(httpd_req_t *req, const char *status, bool ok, const String &message) {
+  httpd_resp_set_status(req, status);
+  httpd_resp_set_type(req, "application/json");
+  httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+  String json = String("{\"ok\":") + (ok ? "true" : "false") + ",\"message\":\"" + jsonEscape(message) + "\"}";
+  return httpd_resp_sendstr(req, json.c_str());
+}
+#endif
+
+#if WIFI_SETTINGS_ON
+/**
  * @brief Decodes an application/x-www-form-urlencoded value ("+" = space, %XX = byte).
  * @param in Encoded value.
  * @return Decoded value.
@@ -254,22 +283,6 @@ static String urlDecode(const char *in) {
     }
   }
   return out;
-}
-
-/**
- * @brief Sends a small JSON reply {"ok":..,"message":".."} with an HTTP status.
- * @param req     Request.
- * @param status  HTTP status line, e.g. "200 OK".
- * @param ok      Value of the "ok" field.
- * @param message Message for the user (escaped here).
- * @return Result of httpd_resp_sendstr().
- */
-static esp_err_t sendResult(httpd_req_t *req, const char *status, bool ok, const String &message) {
-  httpd_resp_set_status(req, status);
-  httpd_resp_set_type(req, "application/json");
-  httpd_resp_set_hdr(req, "Cache-Control", "no-store");
-  String json = String("{\"ok\":") + (ok ? "true" : "false") + ",\"message\":\"" + jsonEscape(message) + "\"}";
-  return httpd_resp_sendstr(req, json.c_str());
 }
 
 esp_err_t CamWebServer::wifiPageHandler(httpd_req_t *req) {
@@ -340,6 +353,78 @@ esp_err_t CamWebServer::wifiClearHandler(httpd_req_t *req) {
   EspCamera &cam = self(req)->camera_;
   if (!cam.clearWifiSettings()) return sendResult(req, "500 Internal Server Error", false, "failed to clear the settings");
   return sendResult(req, "200 OK", true, "Settings cleared. Restart the device to apply.");
+}
+#endif
+
+#if OTA_ON
+/**
+ * @brief Checks HTTP Basic Auth against the OTA password (any user name is accepted).
+ *
+ * Sends 401 with a WWW-Authenticate challenge when the check fails, so the browser asks for
+ * the password and then repeats it for the following requests (page and upload).
+ * @param req Request.
+ * @param cam Camera (owns the OTA password check).
+ * @return true if authorised (or no password is set); false after sending 401.
+ */
+static bool otaAuthorized(httpd_req_t *req, EspCamera &cam) {
+  OtaInfo info;
+  cam.otaInfo(info);
+  if (!info.passwordSet) return true;
+
+  char header[160];
+  if (httpd_req_get_hdr_value_str(req, "Authorization", header, sizeof(header)) == ESP_OK &&
+      strncmp(header, "Basic ", 6) == 0) {
+    unsigned char decoded[120];
+    size_t len = 0;
+    const unsigned char *b64 = (const unsigned char *)header + 6;
+    if (mbedtls_base64_decode(decoded, sizeof(decoded) - 1, &len, b64, strlen(header + 6)) == 0) {
+      decoded[len] = 0;
+      const char *colon = strchr((const char *)decoded, ':');
+      if (colon && cam.otaAuthorize(String(colon + 1))) return true;
+    }
+  }
+  httpd_resp_set_status(req, "401 Unauthorized");
+  httpd_resp_set_hdr(req, "WWW-Authenticate", "Basic realm=\"ESP32-CAM firmware update\"");
+  httpd_resp_sendstr(req, "Authentication required");
+  return false;
+}
+
+esp_err_t CamWebServer::updatePageHandler(httpd_req_t *req) {
+  if (!otaAuthorized(req, self(req)->camera_)) return ESP_OK;
+  httpd_resp_set_type(req, "text/html; charset=utf-8");
+  return httpd_resp_send(req, UPDATE_HTML, UPDATE_HTML_LEN);
+}
+
+esp_err_t CamWebServer::updateUploadHandler(httpd_req_t *req) {
+  EspCamera &cam = self(req)->camera_;
+  if (!otaAuthorized(req, cam)) return ESP_OK;
+  if (req->content_len == 0) return sendResult(req, "400 Bad Request", false, "empty file");
+
+  const char *err = cam.otaBegin(req->content_len);
+  if (err) return sendResult(req, "400 Bad Request", false, String("cannot start: ") + err);
+
+  // Stream the body in chunks straight into the OTA partition - the file is never buffered whole
+  const size_t CHUNK = 4096;
+  uint8_t *buf = (uint8_t *)malloc(CHUNK);
+  size_t left = req->content_len;
+  bool ok = buf != nullptr;
+  while (ok && left > 0) {
+    int r = httpd_req_recv(req, (char *)buf, left < CHUNK ? left : CHUNK);
+    if (r == HTTPD_SOCK_ERR_TIMEOUT) continue;  // slow client - wait again
+    if (r <= 0 || !cam.otaWrite(buf, r)) {
+      ok = false;
+      break;
+    }
+    left -= r;
+  }
+  free(buf);
+
+  err = cam.otaEnd(ok);
+  if (err) return sendResult(req, "500 Internal Server Error", false, String("update failed: ") + err);
+  sendResult(req, "200 OK", true, "Update successful. The device is restarting...");
+  delay(500);  // let the reply reach the browser
+  ESP.restart();
+  return ESP_OK;
 }
 #endif
 

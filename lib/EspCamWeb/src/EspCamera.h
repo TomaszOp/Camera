@@ -17,6 +17,7 @@
 #include "CamSdCard.h"
 #include "CamServos.h"
 #include "NvsSettings.h"
+#include "CamOta.h"
 
 namespace espcamweb {
 
@@ -26,6 +27,18 @@ struct CameraFeatures {
   bool sd;      ///< SD card attached and mounted.
   bool servos;  ///< Servos attached and configured.
   bool settings;  ///< WiFi settings store (NVS) attached.
+  bool ota;       ///< OTA firmware update attached.
+};
+
+/// OTA state as exposed to front-ends.
+struct OtaInfo {
+  bool available = false;     ///< OTA attached.
+  bool passwordSet = false;   ///< A password protects OTA.
+  bool updating = false;      ///< An update is in progress.
+  String running;             ///< Label of the running app partition (e.g. "app0").
+  String next;                ///< Label of the partition the next update goes to; empty = none (no OTA slot).
+  uint32_t slotSize = 0;      ///< Size of the next update partition, bytes.
+  uint32_t appSize = 0;       ///< Size of the running firmware, bytes.
 };
 
 /// Saved WiFi settings as exposed to front-ends - deliberately without the password.
@@ -130,7 +143,7 @@ class EspCamera {
   float fps() const { return fps_; }
 
   /// @return Which optional services are available right now.
-  CameraFeatures features() const { return {hasLed(), hasSd(), hasServos(), hasWifiSettings()}; }
+  CameraFeatures features() const { return {hasLed(), hasSd(), hasServos(), hasWifiSettings(), hasOta()}; }
 
   // ---------- LED lamp (LED_ON) ----------
 #if LED_ON
@@ -250,6 +263,50 @@ class EspCamera {
    */
   bool clearWifiSettings();
 
+  // ---------- OTA firmware update (OTA_ON) ----------
+#if OTA_ON
+  /**
+   * @brief Attaches OTA. When an update starts, the camera switches the lamp off and reports
+   *        otaInProgress() so the stream stops (servos keep their position). Must outlive the camera.
+   * @param ota CamOta (begin() may be called later, after WiFi is up).
+   */
+  void attachOta(CamOta &ota);
+#endif
+  /// @return true if OTA is attached.
+  bool hasOta() const;
+  /// @return true while a firmware update is in progress (front-ends should stop streaming).
+  bool otaInProgress() const;
+  /**
+   * @brief Reads the OTA state and partition information.
+   * @param[out] info Filled in.
+   * @return false if OTA is not attached.
+   */
+  bool otaInfo(OtaInfo &info) const;
+  /**
+   * @brief Checks the OTA password (web upload Basic Auth).
+   * @param password Password from the client.
+   * @return true if it matches or no password is set; false also without OTA.
+   */
+  bool otaAuthorize(const String &password) const;
+  /**
+   * @brief Starts a web firmware upload.
+   * @param size Firmware size in bytes.
+   * @return nullptr on success, otherwise an error message.
+   */
+  const char *otaBegin(size_t size);
+  /**
+   * @brief Writes the next chunk of a web upload.
+   * @param data Chunk. @param len Length.
+   * @return true if written.
+   */
+  bool otaWrite(const uint8_t *data, size_t len);
+  /**
+   * @brief Finishes (verifies, sets boot partition) or aborts a web upload. The caller restarts the board.
+   * @param ok false = abort.
+   * @return nullptr on success, otherwise an error message.
+   */
+  const char *otaEnd(bool ok);
+
   /**
    * @brief Human-readable name of a frame size.
    * @param fs Frame size.
@@ -269,6 +326,9 @@ class EspCamera {
 #endif
 #if WIFI_SETTINGS_ON
   NvsSettings *settings_ = nullptr;  ///< Attached WiFi settings or nullptr.
+#endif
+#if OTA_ON
+  CamOta *ota_ = nullptr;  ///< Attached OTA or nullptr.
 #endif
   bool hasPsram_ = false;                      ///< PSRAM found in begin().
   framesize_t maxFrameSize_ = FRAMESIZE_QVGA;  ///< Size the buffers were allocated for.

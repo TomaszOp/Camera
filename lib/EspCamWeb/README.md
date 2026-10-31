@@ -4,7 +4,7 @@
 
 ## English
 
-PlatformIO library for a live **ESP32-CAM** camera preview over the web: MJPEG stream, FPS counters, resolution and quality changes, flip/mirror. Optional: LED lamp, saving photos to a microSD card, pan/tilt servos, text commands over the serial port (COM) and Telnet, and WiFi settings saved in NVS.
+PlatformIO library for a live **ESP32-CAM** camera preview over the web: MJPEG stream, FPS counters, resolution and quality changes, flip/mirror. Optional: LED lamp, saving photos to a microSD card, pan/tilt servos, text commands over the serial port (COM) and Telnet, WiFi settings saved in NVS and firmware update over WiFi (OTA).
 Configured for the **AI Thinker (OV2640, 4 MB PSRAM)** by default, but the pins and all parameters can be changed.
 
 Requires Arduino core 3.x (pioarduino platform). The `esp_camera` module is built into the core, so no external camera library is needed.
@@ -31,7 +31,7 @@ platform = https://github.com/pioarduino/platform-espressif32/releases/download/
 board = esp32cam
 framework = arduino
 monitor_speed = 115200
-board_build.partitions = huge_app.csv      ; the ~1.1 MB application does not fit the default partition
+board_build.partitions = min_spiffs.csv    ; 2 app slots of 1.875 MB for OTA (huge_app.csv = 1 slot, no OTA)
 lib_deps =
     lennarthennigs/ESP Telnet@^2.3.0       ; only for TELNET_SERVER_ON (also pulled in by library.json)
 build_flags =
@@ -52,6 +52,8 @@ Services and their pins are set in a single library file: `src/EspCamFeatures.h`
 #define TELNET_PORT      23
 #define TELNET_PASSWORD  "" // "" = no password
 #define WIFI_SETTINGS_ON 1  // WiFi settings in NVS          (NvsSettings)
+#define OTA_ON           1  // firmware update over WiFi     (CamOta)
+#define OTA_PASSWORD     "esp32cam-ota"  // change it! "" = no password
 
 #define LED_PIN        4
 #define SERVO_PAN_PIN  12
@@ -149,6 +151,7 @@ Both servers are, like the web page, front-ends that use only `EspCamera`. Comma
 | `servo center` | servos | center position |
 | `sd` | SD | number of photos, free MB, last photo |
 | `sd list [N]` | SD | last N photos (default 10) with sizes |
+| `ota` | OTA | OTA state: password set, running partition, next slot and its size |
 | `restart yes` | – | restart the board (requires the `yes` confirmation) |
 | `quit` / `exit` | – | disconnect (Telnet) |
 
@@ -205,6 +208,15 @@ The Serial log shows whether saved or default settings were used and whether the
 - **The password is never sent:** not in `/status`, not in `/wifi/settings` (only `hasPassword`), not in command replies (shown as `********`) and not in the logs.
 - **Security:** the web page has no login - anyone on the local network can change the WiFi settings. Telnet is protected only by `TELNET_PASSWORD`, and Telnet is not encrypted.
 
+### Firmware update (OTA)
+
+`CamOta` (`OTA_ON`) offers two ways, both attached through `EspCamera::attachOta()`:
+- **ArduinoOTA** (espota): `pio run -e esp32cam_ota -t upload`, with `upload_protocol = espota`, `upload_port = esp32cam.local`, `upload_flags = --port=3232 --auth=<OTA_PASSWORD>` in `platformio.ini`.
+- **Web upload:** page `GET /update` and `POST /update` with the raw `firmware.bin` body. The body is streamed in 4 KB chunks into the next OTA partition (`Update` library), never buffered whole, then verified (`Update.end(true)`); the board restarts after success.
+- Both require a partition table with **two app slots** (`min_spiffs.csv`: 2 × 1.875 MB); the first upload after changing the table must be over USB/serial. NVS keeps its address (0x9000), so saved settings survive.
+- `OTA_PASSWORD` protects both: espota `--auth`, and HTTP Basic Auth on `/update` (any user name). Default `esp32cam-ota` - change it. "" = no password (anyone on the LAN can flash - not recommended).
+- When an update starts, `EspCamera` switches the lamp off and `otaInProgress()` ends the MJPEG stream, so bandwidth and CPU go to the flash write. The servos keep their position.
+
 ### Classes
 
 Every class can be used on its own. Everything is in the `espcamweb` namespace, and the single header `#include <EspCamWeb.h>` includes it all.
@@ -218,6 +230,7 @@ Every class can be used on its own. Everything is in the `espcamweb` namespace, 
 | `CamSdCard` | `CamSdCard.h` | `SD_ON`. microSD card (SD_MMC 1-bit): mounting, free space, saving JPEGs as `/photos/IMG_00001.jpg`… Numbering continues after a restart, because the board has no RTC. |
 | `CamServos` | `CamServos.h` | `SERVO_MOTORS_ON`. Two servos: pan (horizontal) and tilt (vertical), 50 Hz PWM, angles 0–180° with limits. |
 | `NvsSettings` | `NvsSettings.h` | `WIFI_SETTINGS_ON`. WiFi role, SSID and password in NVS: `begin()`, `save()`, `clear()`, `hasSettings()`, validation. |
+| `CamOta` | `CamOta.h` | `OTA_ON`. Firmware update: ArduinoOTA (`begin()`, `handle()` in `loop()`) and web upload into the next OTA slot. |
 | `CamCommands` | `CamCommands.h` | Shared text command interpreter: `execute(line, Print&)`. |
 | `CamComServer` | `CamComServer.h` | `COM_SERVER_ON`. Commands over the serial port, serviced in `loop()` via `handle()`. |
 | `CamTelnetServer` | `CamTelnetServer.h` | `TELNET_SERVER_ON`. Commands over Telnet (ESPTelnet), `handle()` in `loop()`, optional password. |
@@ -264,11 +277,12 @@ Modules are attached to the camera by reference rather than created inside it. T
 
 | Service | Attaching | Methods |
 |---|---|---|
-| all | – | `features()` returns `{led, sd, servos, settings}`: enabled in `EspCamFeatures.h` **and** started successfully (e.g. card inserted) |
+| all | – | `features()` returns `{led, sd, servos, settings, ota}`: enabled in `EspCamFeatures.h` **and** started successfully (e.g. card inserted) |
 | lamp | `attachLed(CamLed&)` | `hasLed()`, `setLed(bool)`, `ledOn()` |
 | SD card | `attachSd(CamSdCard&)` | `hasSd()`, `savePhotoToSd(&bytes)` (returns the file path), `sdPhotoCount()`, `sdFreeBytes()`, `sdLastPhoto()`, `sdListPhotos(Print&, N)` |
 | servos | `attachServos(CamServos&)` | `hasServos()`, `setPan(deg)`, `setTilt(deg)`, `centerServos()`, `pan()`, `tilt()`, `servoLimits(...)` |
 | WiFi settings | `attachSettings(NvsSettings&)` | `hasWifiSettings()`, `wifiSettings(info)` (without the password), `saveWifiSettings(role, ssid, password)`, `clearWifiSettings()` |
+| OTA | `attachOta(CamOta&)` | `hasOta()`, `otaInProgress()`, `otaInfo(info)`, `otaAuthorize(password)`, `otaBegin(size)`, `otaWrite(data, len)`, `otaEnd(ok)` |
 
 The `attach…()` methods exist only when the module is enabled. The other methods always exist and return `false`, 0 or -1 when the module is disabled. This way the server needs no `#if`.
 
@@ -331,7 +345,7 @@ See `examples/Basic/main.cpp`: configuration, `cam.begin(config)` in `setup()` a
 | Address | Description |
 |---|---|
 | `http://<IP>/` | page with the preview and controls |
-| `http://<IP>/status` | JSON: `features` (`led`, `sd`, `servos`, `settings`), fps, resolution, quality, led, flip, RSSI, PSRAM, number of clients, stream port, `sdPhotos`, `sdFreeMB`, `sdLast`, `pan`, `tilt` |
+| `http://<IP>/status` | JSON: `features` (`led`, `sd`, `servos`, `settings`, `ota`), fps, resolution, quality, led, flip, RSSI, PSRAM, number of clients, stream port, `sdPhotos`, `sdFreeMB`, `sdLast`, `pan`, `tilt` |
 | `http://<IP>/control?var=X&val=Y` | `framesize` (5 QVGA, 8 VGA, 9 SVGA, 10 XGA), `quality` (4–63), `led`, `vflip`, `hmirror` (0/1), `pan`, `tilt` (degrees), `center` |
 | `http://<IP>/capture` | single JPEG snapshot |
 | `http://<IP>/save` | take a photo and save it to the SD card; JSON `{"ok":true,"file":"/photos/IMG_00001.jpg"}`, code 503 without a card |
@@ -339,6 +353,8 @@ See `examples/Basic/main.cpp`: configuration, `cam.begin(config)` in `setup()` a
 | `GET http://<IP>/wifi/settings` | JSON: current network, `source` (saved/default), `fallback`, saved settings (`mode`, `ssid`, `hasPassword` - never the password) |
 | `POST http://<IP>/wifi/save` | form fields `mode` (sta/ap), `ssid`, `password`; validated, reply `{"ok":..,"message":".."}` |
 | `POST http://<IP>/wifi/clear` | erase the saved settings |
+| `http://<IP>/update` | firmware update page (`OTA_ON`, HTTP Basic Auth with `OTA_PASSWORD`) |
+| `POST http://<IP>/update` | raw `firmware.bin` body; streamed into the OTA slot, verified, then restart |
 | `http://<IP>:81/stream` | MJPEG stream (separate httpd instance) |
 
 Notes:
@@ -350,7 +366,7 @@ Notes:
 
 ## Polski
 
-Biblioteka PlatformIO do podglądu kamery **ESP32-CAM** na żywo przez WWW: strumień MJPEG, liczniki FPS, zmiana rozdzielczości i jakości, flip/lustro. Opcjonalnie: lampa LED, zapis zdjęć na kartę microSD, serwa pan/tilt, sterowanie poleceniami tekstowymi przez port szeregowy (COM) i Telnet oraz ustawienia WiFi zapisane w NVS.
+Biblioteka PlatformIO do podglądu kamery **ESP32-CAM** na żywo przez WWW: strumień MJPEG, liczniki FPS, zmiana rozdzielczości i jakości, flip/lustro. Opcjonalnie: lampa LED, zapis zdjęć na kartę microSD, serwa pan/tilt, sterowanie poleceniami tekstowymi przez port szeregowy (COM) i Telnet ustawienia WiFi zapisane w NVS oraz aktualizacja programu przez WiFi (OTA).
 Domyślnie skonfigurowana pod **AI Thinker (OV2640, 4 MB PSRAM)**, ale piny i wszystkie parametry można zmienić.
 
 Wymaga Arduino core 3.x (platforma pioarduino). Moduł `esp_camera` jest wbudowany w core, więc nie trzeba dodawać zewnętrznej biblioteki kamery.
@@ -377,7 +393,7 @@ platform = https://github.com/pioarduino/platform-espressif32/releases/download/
 board = esp32cam
 framework = arduino
 monitor_speed = 115200
-board_build.partitions = huge_app.csv      ; aplikacja ~1,1 MB nie mieści się w domyślnej partycji
+board_build.partitions = min_spiffs.csv    ; 2 sloty po 1,875 MB dla OTA (huge_app.csv = 1 slot, bez OTA)
 lib_deps =
     lennarthennigs/ESP Telnet@^2.3.0       ; tylko dla TELNET_SERVER_ON (dociąga się też z library.json)
 build_flags =
@@ -398,6 +414,8 @@ Usługi i ich piny ustawia się w jednym pliku biblioteki: `src/EspCamFeatures.h
 #define TELNET_PORT      23
 #define TELNET_PASSWORD  "" // "" = bez hasła
 #define WIFI_SETTINGS_ON 1  // ustawienia WiFi w NVS         (NvsSettings)
+#define OTA_ON           1  // aktualizacja przez WiFi       (CamOta)
+#define OTA_PASSWORD     "esp32cam-ota"  // zmień! "" = bez hasła
 
 #define LED_PIN        4
 #define SERVO_PAN_PIN  12
@@ -495,6 +513,7 @@ Oba serwery są, tak jak strona WWW, dodatkami korzystającymi wyłącznie z `Es
 | `servo center` | serwa | pozycja środkowa |
 | `sd` | SD | liczba zdjęć, wolne MB, ostatnie zdjęcie |
 | `sd list [N]` | SD | ostatnie N zdjęć (domyślnie 10) z rozmiarami |
+| `ota` | OTA | stan OTA: hasło ustawione, bieżąca partycja, następny slot i jego rozmiar |
 | `restart yes` | – | restart płytki (wymaga potwierdzenia `yes`) |
 | `quit` / `exit` | – | rozłączenie (Telnet) |
 
@@ -551,6 +570,15 @@ Log na Serial pokazuje, czy użyto zapisanych, czy domyślnych ustawień i czy n
 - **Hasło nigdy nie jest wysyłane:** nie ma go w `/status` ani w `/wifi/settings` (jest tylko `hasPassword`), w odpowiedziach poleceń jest pokazane jako `********` i nie trafia do logów.
 - **Bezpieczeństwo:** strona nie ma logowania, więc każdy w sieci lokalnej może zmienić ustawienia WiFi. Telnet chroni tylko `TELNET_PASSWORD`, a Telnet nie jest szyfrowany.
 
+### Aktualizacja programu (OTA)
+
+`CamOta` (`OTA_ON`) daje dwa sposoby, oba dołączone przez `EspCamera::attachOta()`:
+- **ArduinoOTA** (espota): `pio run -e esp32cam_ota -t upload`, z `upload_protocol = espota`, `upload_port = esp32cam.local`, `upload_flags = --port=3232 --auth=<OTA_PASSWORD>` w `platformio.ini`.
+- **Wgrywanie przez stronę:** strona `GET /update` i `POST /update` z surowym plikiem `firmware.bin` w treści. Plik trafia kawałkami po 4 KB prosto do następnej partycji OTA (biblioteka `Update`), bez buforowania całości. Potem jest weryfikowany (`Update.end(true)`), a po sukcesie płytka się restartuje.
+- Oba sposoby wymagają tablicy partycji z **dwoma slotami na program** (`min_spiffs.csv`: 2 × 1,875 MB). Pierwsze wgranie po zmianie tablicy musi być przez USB/UART. NVS zostaje pod tym samym adresem (0x9000), więc zapisane ustawienia przetrwają.
+- `OTA_PASSWORD` chroni oba sposoby: `--auth` w espota oraz HTTP Basic Auth na `/update` (nazwa użytkownika dowolna). Domyślnie `esp32cam-ota`, więc zmień je. "" oznacza brak hasła, czyli każdy w sieci lokalnej może wgrać program (niezalecane).
+- Gdy aktualizacja się zaczyna, `EspCamera` gasi lampę, a `otaInProgress()` kończy strumień MJPEG, żeby łącze i procesor obsługiwały zapis do flash. Serwa zostają w swojej pozycji.
+
 ### Klasy
 
 Każdej klasy można używać samodzielnie. Wszystko jest w przestrzeni nazw `espcamweb`, a jeden nagłówek `#include <EspCamWeb.h>` dołącza całość.
@@ -564,6 +592,7 @@ Każdej klasy można używać samodzielnie. Wszystko jest w przestrzeni nazw `es
 | `CamSdCard` | `CamSdCard.h` | `SD_ON`. Karta microSD (SD_MMC 1-bit): montowanie, wolne miejsce, zapis JPEG jako `/photos/IMG_00001.jpg`… Numeracja jest kontynuowana po restarcie, bo płytka nie ma zegara RTC. |
 | `CamServos` | `CamServos.h` | `SERVO_MOTORS_ON`. Dwa serwa: pan (poziom) i tilt (pion), PWM 50 Hz, kąty 0–180° z limitami. |
 | `NvsSettings` | `NvsSettings.h` | `WIFI_SETTINGS_ON`. Tryb WiFi, SSID i hasło w NVS: `begin()`, `save()`, `clear()`, `hasSettings()`, walidacja. |
+| `CamOta` | `CamOta.h` | `OTA_ON`. Aktualizacja programu: ArduinoOTA (`begin()`, `handle()` w `loop()`) i wgrywanie przez stronę do następnego slotu OTA. |
 | `CamCommands` | `CamCommands.h` | Wspólny interpreter poleceń tekstowych: `execute(linia, Print&)`. |
 | `CamComServer` | `CamComServer.h` | `COM_SERVER_ON`. Polecenia przez port szeregowy, obsługiwane w `loop()` przez `handle()`. |
 | `CamTelnetServer` | `CamTelnetServer.h` | `TELNET_SERVER_ON`. Polecenia przez Telnet (ESPTelnet), `handle()` w `loop()`, opcjonalne hasło. |
@@ -610,11 +639,12 @@ Moduły dołącza się do kamery przez referencję, a nie tworzy wewnątrz niej.
 
 | Usługa | Dołączenie | Metody |
 |---|---|---|
-| wszystkie | – | `features()` zwraca `{led, sd, servos, settings}`: włączone w `EspCamFeatures.h` **i** poprawnie uruchomione (np. karta włożona) |
+| wszystkie | – | `features()` zwraca `{led, sd, servos, settings, ota}`: włączone w `EspCamFeatures.h` **i** poprawnie uruchomione (np. karta włożona) |
 | lampa | `attachLed(CamLed&)` | `hasLed()`, `setLed(bool)`, `ledOn()` |
 | karta SD | `attachSd(CamSdCard&)` | `hasSd()`, `savePhotoToSd(&bajty)` (zwraca ścieżkę pliku), `sdPhotoCount()`, `sdFreeBytes()`, `sdLastPhoto()`, `sdListPhotos(Print&, N)` |
 | serwa | `attachServos(CamServos&)` | `hasServos()`, `setPan(deg)`, `setTilt(deg)`, `centerServos()`, `pan()`, `tilt()`, `servoLimits(...)` |
 | ustawienia WiFi | `attachSettings(NvsSettings&)` | `hasWifiSettings()`, `wifiSettings(info)` (bez hasła), `saveWifiSettings(tryb, ssid, hasło)`, `clearWifiSettings()` |
+| OTA | `attachOta(CamOta&)` | `hasOta()`, `otaInProgress()`, `otaInfo(info)`, `otaAuthorize(hasło)`, `otaBegin(rozmiar)`, `otaWrite(dane, długość)`, `otaEnd(ok)` |
 
 Metody `attach…()` istnieją tylko wtedy, gdy moduł jest włączony. Pozostałe metody istnieją zawsze, a przy wyłączonym module zwracają `false`, 0 albo -1. Dzięki temu serwer nie potrzebuje żadnych `#if`.
 
@@ -677,7 +707,7 @@ Zobacz `examples/Basic/main.cpp`: konfiguracja, `cam.begin(config)` w `setup()` 
 | Adres | Opis |
 |---|---|
 | `http://<IP>/` | strona z podglądem i sterowaniem |
-| `http://<IP>/status` | JSON: `features` (`led`, `sd`, `servos`, `settings`), fps, rozdzielczość, jakość, led, flip, RSSI, PSRAM, liczba klientów, port strumienia, `sdPhotos`, `sdFreeMB`, `sdLast`, `pan`, `tilt` |
+| `http://<IP>/status` | JSON: `features` (`led`, `sd`, `servos`, `settings`, `ota`), fps, rozdzielczość, jakość, led, flip, RSSI, PSRAM, liczba klientów, port strumienia, `sdPhotos`, `sdFreeMB`, `sdLast`, `pan`, `tilt` |
 | `http://<IP>/control?var=X&val=Y` | `framesize` (5 QVGA, 8 VGA, 9 SVGA, 10 XGA), `quality` (4–63), `led`, `vflip`, `hmirror` (0/1), `pan`, `tilt` (stopnie), `center` |
 | `http://<IP>/capture` | pojedyncze zdjęcie JPEG |
 | `http://<IP>/save` | zrób zdjęcie i zapisz na karcie SD; JSON `{"ok":true,"file":"/photos/IMG_00001.jpg"}`, a bez karty kod 503 |
@@ -685,6 +715,8 @@ Zobacz `examples/Basic/main.cpp`: konfiguracja, `cam.begin(config)` w `setup()` 
 | `GET http://<IP>/wifi/settings` | JSON: obecna sieć, `source` (saved/default), `fallback`, zapisane ustawienia (`mode`, `ssid`, `hasPassword`, nigdy samo hasło) |
 | `POST http://<IP>/wifi/save` | pola formularza `mode` (sta/ap), `ssid`, `password`; walidacja, odpowiedź `{"ok":..,"message":".."}` |
 | `POST http://<IP>/wifi/clear` | skasowanie zapisanych ustawień |
+| `http://<IP>/update` | strona aktualizacji programu (`OTA_ON`, HTTP Basic Auth z `OTA_PASSWORD`) |
+| `POST http://<IP>/update` | surowy `firmware.bin` w treści; zapis do slotu OTA, weryfikacja, restart |
 | `http://<IP>:81/stream` | strumień MJPEG (osobna instancja httpd) |
 
 Uwagi:

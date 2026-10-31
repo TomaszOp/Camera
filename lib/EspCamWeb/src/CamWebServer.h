@@ -3,7 +3,8 @@
  * @brief Camera web server on esp_http_server (ESP-IDF).
  *
  * - httpPort:   page, /control, /status, /capture, /save (photo to SD card),
- *               /wifi pages and API (WiFi settings, with WIFI_SETTINGS_ON)
+ *               /wifi pages and API (WiFi settings, with WIFI_SETTINGS_ON),
+ *               /update firmware upload (with OTA_ON, HTTP Basic Auth with OTA_PASSWORD)
  * - streamPort: /stream (MJPEG) in a separate httpd instance, so the page never blocks the stream
  *
  * Independent of the rest of the library: needs only an EspCamera object
@@ -125,6 +126,23 @@ class CamWebServer {
    * @return ESP_OK (500 if NVS could not be cleared).
    */
   static esp_err_t wifiClearHandler(httpd_req_t *req);
+#endif
+
+#if OTA_ON
+  /**
+   * @brief GET /update - firmware upload page (HTTP Basic Auth with OTA_PASSWORD).
+   * @param req Request.
+   * @return ESP_OK or a send error.
+   */
+  static esp_err_t updatePageHandler(httpd_req_t *req);
+
+  /**
+   * @brief POST /update - raw firmware.bin body, streamed in 4 KB chunks into the next OTA slot,
+   *        verified, then the board restarts (HTTP Basic Auth with OTA_PASSWORD).
+   * @param req Request.
+   * @return ESP_OK (400/500 JSON with the error message on failure).
+   */
+  static esp_err_t updateUploadHandler(httpd_req_t *req);
 #endif
 
   EspCamera &camera_;                      ///< Camera served by all handlers.

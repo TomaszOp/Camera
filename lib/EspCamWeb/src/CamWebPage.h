@@ -17,6 +17,13 @@ extern const char INDEX_HTML[] PROGMEM;
 /// Length of INDEX_HTML in bytes, without the terminating NUL.
 extern const size_t INDEX_HTML_LEN;
 
+#if OTA_ON
+/// HTML of the firmware update page (/update).
+extern const char UPDATE_HTML[] PROGMEM;
+/// Length of UPDATE_HTML in bytes, without the terminating NUL.
+extern const size_t UPDATE_HTML_LEN;
+#endif
+
 #if WIFI_SETTINGS_ON
 /// HTML of the WiFi settings page (/wifi).
 extern const char WIFI_HTML[] PROGMEM;

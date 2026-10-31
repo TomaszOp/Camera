@@ -68,6 +68,7 @@ CamCommands::Result CamCommands::execute(const String &line, Print &out) {
   else if (cmd == "led") led(args[1], out);
   else if (cmd == "servo") servo(args + 1, n - 1, out);
   else if (cmd == "photo") photo(out);
+  else if (cmd == "ota") ota(out);
   else if (cmd == "sd") sd(args + 1, n - 1, out);
   else if (cmd == "cam") cam(args + 1, n - 1, out);
   else if (cmd == "restart") restart(args[1], out);
@@ -104,6 +105,9 @@ void CamCommands::help(Print &out) {
     out.print("  sd                        SD card state\r\n"
               "  sd list [N]               last N photos (default 10)\r\n");
   }
+  if (f.ota) {
+    out.print("  ota                       firmware update state (OTA)\r\n");
+  }
   if (f.settings) {
     out.print("  wifi set sta <ssid> [password]  save a network to join (restart to apply)\r\n"
               "  wifi set ap <ssid> [password]   save an own access point (restart to apply)\r\n"
@@ -124,8 +128,8 @@ void CamCommands::info(Print &out) {
   out.printf("Memory: heap %u KB free, PSRAM %u KB free of %u KB\r\n", ESP.getFreeHeap() / 1024,
              ESP.getFreePsram() / 1024, ESP.getPsramSize() / 1024);
   wifiState(out);
-  out.printf("Services: LED %s, SD card %s, servos %s, WiFi settings %s\r\n", f.led ? "yes" : "no",
-             f.sd ? "yes" : "no", f.servos ? "yes" : "no", f.settings ? "yes" : "no");
+  out.printf("Services: LED %s, SD card %s, servos %s, WiFi settings %s, OTA %s\r\n", f.led ? "yes" : "no",
+             f.sd ? "yes" : "no", f.servos ? "yes" : "no", f.settings ? "yes" : "no", f.ota ? "yes" : "no");
 }
 
 void CamCommands::status(Print &out) {
@@ -234,6 +238,20 @@ void CamCommands::servo(const String *args, int n, Print &out) {
     return;
   }
   out.printf("Servos: pan %d°, tilt %d°\r\n", camera_.pan(), camera_.tilt());
+}
+
+void CamCommands::ota(Print &out) {
+  OtaInfo info;
+  if (!camera_.otaInfo(info)) return unavailable(out, "OTA");
+  out.printf("OTA: enabled, password %s%s\r\n", info.passwordSet ? "set" : "NOT set (anyone on the LAN can flash)",
+             info.updating ? ", update in progress" : "");
+  out.printf("Running partition: %s, firmware %u KB\r\n", info.running.c_str(), (unsigned)(info.appSize / 1024));
+  if (info.next.length()) {
+    out.printf("Next update goes to: %s (%u KB)\r\n", info.next.c_str(), (unsigned)(info.slotSize / 1024));
+  } else {
+    out.print("No OTA slot - use a partition table with two app slots (min_spiffs.csv)\r\n");
+  }
+  out.print("Upload: pio run -e esp32cam_ota -t upload, or the /update web page\r\n");
 }
 
 void CamCommands::photo(Print &out) {

@@ -27,6 +27,9 @@ bool EspCamWeb::begin(const EspCamWebConfig &config) {
 
   WifiSettings wifi = config.wifi;
   wifi.mdnsHttpPort = config.server.httpPort;
+#if OTA_ON
+  camera_.attachOta(ota_);
+#endif
 #if WIFI_SETTINGS_ON
   settings_.begin();
   camera_.attachSettings(settings_);
@@ -37,6 +40,9 @@ bool EspCamWeb::begin(const EspCamWebConfig &config) {
   if (!server_.begin(config.server)) return false;
 #if TELNET_SERVER_ON
   telnet_.begin(config.telnet);
+#endif
+#if OTA_ON
+  ota_.begin(config.ota);
 #endif
 
   String ip = wifi_.ip().toString();
@@ -57,6 +63,9 @@ void EspCamWeb::loop() {
 #endif
 #if TELNET_SERVER_ON
   telnet_.handle();
+#endif
+#if OTA_ON
+  ota_.handle();
 #endif
   if (!fpsLogIntervalMs_ || now - logLastMs_ < fpsLogIntervalMs_) return;
 

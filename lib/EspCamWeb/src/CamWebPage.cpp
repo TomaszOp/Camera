@@ -86,6 +86,7 @@ a{color:var(--accent)}
     <div class="foot" id="info"></div>
     <div class="foot"><a href="/capture" target="_blank">Snapshot (JPEG)</a> · <a id="raw" target="_blank">Raw stream</a></div>
     <div class="foot" id="wifiLink" hidden><a href="/wifi">WiFi settings</a></div>
+    <div class="foot" id="otaLink" hidden><a href="/update">Firmware update</a></div>
   </aside>
 </main>
 <script>
@@ -165,6 +166,7 @@ async function refresh() {
     $('secSd').hidden = !s.features.sd;
     $('secServo').hidden = !s.features.servos;
     $('wifiLink').hidden = !s.features.settings;
+    $('otaLink').hidden = !s.features.ota;
     if (s.features.sd) $('sdInfo').textContent = `photos: ${s.sdPhotos} · free: ${s.sdFreeMB} MB` + (s.sdLast ? ` · last: ${s.sdLast}` : '');
     if (s.features.servos) {
       pos.pan = s.pan; pos.tilt = s.tilt;
@@ -336,6 +338,79 @@ load();
 )rawliteral";
 
 const size_t WIFI_HTML_LEN = sizeof(WIFI_HTML) - 1;
+#endif
+
+#if OTA_ON
+const char UPDATE_HTML[] PROGMEM = R"rawliteral(<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ESP32-CAM firmware update</title>
+<style>
+:root{--bg:#111418;--panel:#1b2027;--line:#2b323c;--text:#e6e9ee;--muted:#8b95a3;--accent:#3b82f6;--ok:#22c55e;--err:#ef4444}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+header{display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-bottom:1px solid var(--line)}
+h1{font-size:18px;margin:0}
+main{display:flex;flex-direction:column;gap:16px;padding:16px;max-width:560px;margin:0 auto}
+section{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px;display:flex;flex-direction:column;gap:10px}
+label.t{display:block;color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+button{background:var(--accent);color:var(--text);border:1px solid var(--accent);border-radius:6px;padding:8px 10px;font:inherit;cursor:pointer}
+button:disabled{opacity:.5;cursor:default}
+input[type=file]{color:var(--text)}
+progress{width:100%;height:14px;accent-color:var(--accent)}
+a{color:var(--accent)}
+.foot{color:var(--muted);font-size:12px}
+#msg.ok{color:var(--ok)}#msg.err{color:var(--err)}
+</style>
+</head>
+<body>
+<header><h1>Firmware update</h1><a href="/">&larr; Camera</a></header>
+<main>
+  <section>
+    <label class="t">Firmware file</label>
+    <input type="file" id="file" accept=".bin">
+    <div class="foot">Select <b>firmware.bin</b> built by PlatformIO: .pio/build/esp32cam/firmware.bin</div>
+    <button id="go" disabled>Upload and install</button>
+    <progress id="bar" max="100" value="0" hidden></progress>
+    <div id="msg"></div>
+    <div class="foot">The camera stream stops during the update. After a successful upload the device
+      verifies the image and restarts automatically; reload the page after about 15 seconds.
+      Do not power off the board while uploading.</div>
+  </section>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+function msg(text, ok) { $('msg').textContent = text; $('msg').className = ok ? 'ok' : 'err'; }
+$('file').onchange = () => { $('go').disabled = !$('file').files.length; msg('', true); };
+$('go').onclick = () => {
+  const f = $('file').files[0];
+  if (!f) return;
+  $('go').disabled = true;
+  $('bar').hidden = false;
+  $('bar').value = 0;
+  msg('Uploading ' + f.name + ' (' + Math.round(f.size / 1024) + ' KB)...', true);
+  const x = new XMLHttpRequest();
+  x.open('POST', '/update');
+  x.setRequestHeader('Content-Type', 'application/octet-stream');
+  x.upload.onprogress = e => { if (e.lengthComputable) $('bar').value = e.loaded * 100 / e.total; };
+  x.onload = () => {
+    let r = { ok: false, message: x.responseText };
+    try { r = JSON.parse(x.responseText); } catch (e) {}
+    msg(r.message, r.ok);
+    if (r.ok) { $('bar').value = 100; setTimeout(() => location.href = '/', 15000); }
+    else $('go').disabled = false;
+  };
+  x.onerror = () => { msg('Upload failed (connection lost)', false); $('go').disabled = false; };
+  x.send(f);
+};
+</script>
+</body>
+</html>
+)rawliteral";
+
+const size_t UPDATE_HTML_LEN = sizeof(UPDATE_HTML) - 1;
 #endif
 
 }  // namespace espcamweb

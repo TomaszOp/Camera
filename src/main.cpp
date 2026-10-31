@@ -33,6 +33,9 @@ static CamSdCard sd;  ///< SD card for photos.
 #if SERVO_MOTORS_ON
 static CamServos servos;  ///< Pan/tilt servos.
 #endif
+#if OTA_ON
+static CamOta ota;  ///< Firmware update over WiFi (PlatformIO espota and the /update page).
+#endif
 #if WIFI_SETTINGS_ON
 static NvsSettings settings;  ///< WiFi settings saved in NVS (override secrets.h when present).
 #endif
@@ -80,10 +83,13 @@ void setup() {
   settings.begin();
   camera.attachSettings(settings);
 #endif
+#if OTA_ON
+  camera.attachOta(ota);  // started after WiFi below
+#endif
 
   CameraFeatures f = camera.features();
-  Serial.printf("Services: LED %s, SD %s, servos %s, WiFi settings %s\n", f.led ? "yes" : "no",
-                f.sd ? "yes" : "no", f.servos ? "yes" : "no", f.settings ? "yes" : "no");
+  Serial.printf("Services: LED %s, SD %s, servos %s, WiFi settings %s, OTA %s\n", f.led ? "yes" : "no",
+                f.sd ? "yes" : "no", f.servos ? "yes" : "no", f.settings ? "yes" : "no", f.ota ? "yes" : "no");
 
   WifiSettings net;
   net.ssid = WIFI_SSID;
@@ -98,6 +104,9 @@ void setup() {
   server.begin(web);
 #if TELNET_SERVER_ON
   telnet.begin(TelnetSettings());  // TELNET_PORT, TELNET_PASSWORD
+#endif
+#if OTA_ON
+  ota.begin(OtaSettings());  // OTA_PORT, OTA_PASSWORD, OTA_HOSTNAME
 #endif
 
   String ip = wifi.ip().toString();
@@ -121,6 +130,9 @@ void loop() {
 #endif
 #if TELNET_SERVER_ON
   telnet.handle();
+#endif
+#if OTA_ON
+  ota.handle();
 #endif
 
   // Without the COM server: FPS every 5 s on Serial (with it, the cam/status commands show FPS)

@@ -5,6 +5,7 @@
 #include "EspCamera.h"
 
 #include <Arduino.h>
+#include <esp_ota_ops.h>
 
 namespace espcamweb {
 /**
@@ -254,6 +255,48 @@ const char *EspCamera::saveWifiSettings(WifiRole, const String &, const String &
   return "WiFi settings unavailable";
 }
 bool EspCamera::clearWifiSettings() { return false; }
+#endif
+
+// ---------- OTA ----------
+#if OTA_ON
+void EspCamera::attachOta(CamOta &ota) {
+  ota_ = &ota;
+  // On update start: lamp off; otaInProgress() makes the stream handler stop
+  ota.setStartHook([this]() { setLed(false); });
+}
+bool EspCamera::hasOta() const { return ota_ != nullptr; }
+bool EspCamera::otaInProgress() const { return ota_ && ota_->isUpdating(); }
+bool EspCamera::otaInfo(OtaInfo &info) const {
+  info = OtaInfo();
+  if (!ota_) return false;
+  info.available = true;
+  info.passwordSet = ota_->hasPassword();
+  info.updating = ota_->isUpdating();
+  const esp_partition_t *run = esp_ota_get_running_partition();
+  const esp_partition_t *next = esp_ota_get_next_update_partition(nullptr);
+  if (run) info.running = run->label;
+  if (next) {
+    info.next = next->label;
+    info.slotSize = next->size;
+  }
+  info.appSize = ESP.getSketchSize();
+  return true;
+}
+bool EspCamera::otaAuthorize(const String &password) const { return ota_ && ota_->checkPassword(password); }
+const char *EspCamera::otaBegin(size_t size) { return ota_ ? ota_->webBegin(size) : "OTA unavailable"; }
+bool EspCamera::otaWrite(const uint8_t *data, size_t len) { return ota_ && ota_->webWrite(data, len); }
+const char *EspCamera::otaEnd(bool ok) { return ota_ ? ota_->webEnd(ok) : "OTA unavailable"; }
+#else
+bool EspCamera::hasOta() const { return false; }
+bool EspCamera::otaInProgress() const { return false; }
+bool EspCamera::otaInfo(OtaInfo &info) const {
+  info = OtaInfo();
+  return false;
+}
+bool EspCamera::otaAuthorize(const String &) const { return false; }
+const char *EspCamera::otaBegin(size_t) { return "OTA unavailable"; }
+bool EspCamera::otaWrite(const uint8_t *, size_t) { return false; }
+const char *EspCamera::otaEnd(bool) { return "OTA unavailable"; }
 #endif
 
 const char *EspCamera::frameSizeName(framesize_t fs) {

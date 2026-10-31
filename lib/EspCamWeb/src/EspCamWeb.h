@@ -10,6 +10,7 @@
  * - CamSdCard       - microSD card for photos              [SD_ON]
  * - CamServos       - pan/tilt servos                      [SERVO_MOTORS_ON]
  * - NvsSettings     - WiFi settings saved in NVS           [WIFI_SETTINGS_ON]
+ * - CamOta          - firmware update over WiFi            [OTA_ON]
  * - CamComServer    - commands over the serial port (front-end) [COM_SERVER_ON]
  * - CamTelnetServer - commands over Telnet (front-end)     [TELNET_SERVER_ON]
  * - CamCommands     - command interpreter shared by COM and Telnet
@@ -29,6 +30,7 @@
 #include "EspCamWebConfig.h"
 #include "EspCamera.h"
 #include "NvsSettings.h"
+#include "CamOta.h"
 
 namespace espcamweb {
 
@@ -59,7 +61,7 @@ class EspCamWeb {
    */
   bool begin(const EspCamWebConfig &config);
 
-  /// @brief Call from loop(): updates FPS (logged every fpsLogIntervalMs), services COM and Telnet.
+  /// @brief Call from loop(): updates FPS (logged every fpsLogIntervalMs), services COM, Telnet and OTA.
   void loop();
 
   /// @return The camera.
@@ -75,6 +77,10 @@ class EspCamWeb {
 #if SERVO_MOTORS_ON
   /// @return The servos.
   CamServos &servos() { return servos_; }
+#endif
+#if OTA_ON
+  /// @return The OTA updater.
+  CamOta &ota() { return ota_; }
 #endif
 #if WIFI_SETTINGS_ON
   /// @return The saved WiFi settings.
@@ -106,6 +112,9 @@ class EspCamWeb {
 #endif
 #if WIFI_SETTINGS_ON
   NvsSettings settings_;
+#endif
+#if OTA_ON
+  CamOta ota_;
 #endif
   CamWifi wifi_;
   CamWebServer server_;

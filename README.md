@@ -25,6 +25,7 @@ Services and their pins are set in a single file: [`lib/EspCamWeb/src/EspCamFeat
 | `COM_SERVER_ON` | 1 | text commands over the serial port (`pio device monitor`) |
 | `TELNET_SERVER_ON` | 1 | the same commands over Telnet: `telnet esp32cam.local` (port `TELNET_PORT`, password `TELNET_PASSWORD`, no password by default) |
 | `WIFI_SETTINGS_ON` | 1 | WiFi settings (STA/AP, SSID, password) saved in the board's NVS memory, editable on the `/wifi` page and with the `wifi` command |
+| `OTA_ON` | 1 | firmware update over WiFi: `pio run -e esp32cam_ota -t upload` or the `/update` page (password `OTA_PASSWORD`) |
 
 A disabled module is not compiled and the page does not show its buttons. The buttons are also hidden when a module is enabled but not working (e.g. no card in the slot).
 
@@ -66,6 +67,20 @@ pio device monitor
 
 The monitor (115200) shows the IP address and the command server prompt (`> `). The `cam` and `status` commands show the frame rate. With `COM_SERVER_ON 0`, FPS is printed every 5 s.
 
+#### Firmware update over WiFi (OTA)
+
+With `OTA_ON` (default) new firmware can be uploaded without a cable, in two ways:
+1. **PlatformIO over the network:** `pio run -e esp32cam_ota -t upload` (environment `esp32cam_ota` in `platformio.ini`, espota protocol, port 3232, `upload_port = esp32cam.local`; use the IP address if `.local` does not resolve).
+2. **Web page:** `http://<IP>/update` (link “Firmware update” on the main page). Build with `pio run`, then select `.pio/build/esp32cam/firmware.bin` and click “Upload and install”. The page shows a progress bar; after verification the board restarts by itself.
+
+The third way is still USB/serial (`pio run -t upload`, see above).
+
+- **Partitions:** OTA needs two program slots, so the project uses `min_spiffs.csv` (2 × 1.875 MB) instead of `huge_app.csv` (1 × 3 MB). The program takes about 1.3 MB (66% of a slot). NVS stays at the same address (0x9000), so saved WiFi settings survive the change.
+- **The first upload after switching the partition table must be done over USB/serial** - OTA cannot change the partition table.
+- **Password:** `OTA_PASSWORD` in `EspCamFeatures.h` (default `esp32cam-ota` - **change it**, also in `upload_flags = --auth=...` in `platformio.ini`). The `/update` page asks for it with an HTTP login dialog (any user name). An empty password means anyone on the local network can flash firmware - not recommended. HTTP and espota are not encrypted, so use OTA only on a trusted network.
+- During an update the camera stream stops and the lamp switches off; the servos keep their position. Do not power off the board while uploading.
+- The `ota` command (COM/Telnet) shows whether OTA is enabled, whether a password is set, the running partition and the slot for the next update.
+
 ### 3. Opening the page
 
 - `http://<IP from the monitor>/` or `http://esp32cam.local/` (mDNS; Windows may need Bonjour)
@@ -75,6 +90,7 @@ The monitor (115200) shows the IP address and the command server prompt (`> `). 
 - Controls: `http://<IP>/control?var=<name>&val=<value>`, where name is `framesize` (5=QVGA, 8=VGA, 9=SVGA, 10=XGA), `quality` (4–63), `led`, `vflip`, `hmirror` (0/1), `pan`, `tilt` (degrees), `center`
 - Photo to the SD card: `http://<IP>/save`
 - WiFi settings: `http://<IP>/wifi`
+- Firmware update: `http://<IP>/update`
 
 The page, the COM/Telnet commands and the Serial logs are in English. The page shows two FPS counters: **browser** (frames actually received by the browser) and **server** (frames sent by the ESP32).
 
@@ -89,6 +105,7 @@ Connect with `pio device monitor` or `telnet esp32cam.local` and type `help`. Th
 - `cam`, `cam res vga`, `cam quality 15`: image settings,
 - `wifi`: network state and saved settings,
 - `wifi set sta <ssid> [password]`, `wifi set ap <ssid> [password]`, `wifi clear yes`: change or erase the saved WiFi settings (use "quotes" for spaces; restart to apply),
+- `ota`: firmware update (OTA) state,
 - `restart yes`: restart the board.
 
 The full list is in the [library README](lib/EspCamWeb/README.md#command-servers-com-and-telnet). Commands of services disabled in `EspCamFeatures.h` are unavailable. Telnet does not encrypt the connection, so use it only on a trusted network.
@@ -135,6 +152,7 @@ Usługi i ich piny ustawia się w jednym pliku: [`lib/EspCamWeb/src/EspCamFeatur
 | `COM_SERVER_ON` | 1 | polecenia tekstowe przez port szeregowy (`pio device monitor`) |
 | `TELNET_SERVER_ON` | 1 | te same polecenia przez Telnet: `telnet esp32cam.local` (port `TELNET_PORT`, hasło `TELNET_PASSWORD`, domyślnie bez hasła) |
 | `WIFI_SETTINGS_ON` | 1 | ustawienia WiFi (STA/AP, SSID, hasło) zapisane w pamięci NVS płytki, do zmiany na stronie `/wifi` i poleceniem `wifi` |
+| `OTA_ON` | 1 | aktualizacja programu przez WiFi: `pio run -e esp32cam_ota -t upload` albo strona `/update` (hasło `OTA_PASSWORD`) |
 
 Wyłączony moduł nie jest kompilowany, a strona nie pokazuje jego przycisków. Przycisków nie ma też wtedy, gdy moduł jest włączony, ale nie działa (np. brak karty w slocie).
 
@@ -176,6 +194,20 @@ pio device monitor
 
 Na monitorze (115200) pojawi się adres IP i znak zachęty serwera poleceń (`> `). Liczbę klatek pokazują polecenia `cam` i `status`. Przy `COM_SERVER_ON 0` FPS jest wypisywany co 5 s.
 
+#### Aktualizacja programu przez WiFi (OTA)
+
+Z `OTA_ON` (domyślnie włączone) nowy program można wgrać bez kabla, na dwa sposoby:
+1. **PlatformIO przez sieć:** `pio run -e esp32cam_ota -t upload` (środowisko `esp32cam_ota` w `platformio.ini`, protokół espota, port 3232, `upload_port = esp32cam.local`; jeśli `.local` nie działa, wpisz adres IP).
+2. **Strona WWW:** `http://<IP>/update` (link „Firmware update” na stronie głównej). Zbuduj program przez `pio run`, wybierz plik `.pio/build/esp32cam/firmware.bin` i kliknij „Upload and install”. Strona pokazuje pasek postępu, a po weryfikacji płytka sama się restartuje.
+
+Trzeci sposób to nadal USB/UART (`pio run -t upload`, opis wyżej).
+
+- **Partycje:** OTA wymaga dwóch slotów na program, dlatego projekt używa `min_spiffs.csv` (2 × 1,875 MB) zamiast `huge_app.csv` (1 × 3 MB). Program zajmuje ok. 1,3 MB (66% slotu). NVS jest pod tym samym adresem (0x9000), więc zapisane ustawienia WiFi przetrwają zmianę.
+- **Pierwsze wgranie po zmianie tablicy partycji musi być przez USB/UART**, bo OTA nie potrafi zmienić tablicy partycji.
+- **Hasło:** `OTA_PASSWORD` w `EspCamFeatures.h` (domyślnie `esp32cam-ota`, **zmień je**, także w `upload_flags = --auth=...` w `platformio.ini`). Strona `/update` pyta o nie w okienku logowania przeglądarki (nazwa użytkownika dowolna). Puste hasło oznacza, że każdy w sieci lokalnej może wgrać program, więc nie jest zalecane. HTTP i espota nie są szyfrowane, dlatego używaj OTA tylko w zaufanej sieci.
+- Na czas aktualizacji strumień kamery się zatrzymuje, a lampa gaśnie. Serwa zostają w swojej pozycji. Nie wyłączaj zasilania w trakcie wgrywania.
+- Polecenie `ota` (COM/Telnet) pokazuje, czy OTA jest włączone, czy ustawiono hasło, bieżącą partycję i slot na następną aktualizację.
+
 ### 3. Otwarcie strony
 
 - `http://<IP z monitora>/` albo `http://esp32cam.local/` (mDNS; na Windows może wymagać Bonjour)
@@ -185,6 +217,7 @@ Na monitorze (115200) pojawi się adres IP i znak zachęty serwera poleceń (`> 
 - Sterowanie: `http://<IP>/control?var=<nazwa>&val=<wartość>`, gdzie nazwa to `framesize` (5=QVGA, 8=VGA, 9=SVGA, 10=XGA), `quality` (4–63), `led`, `vflip`, `hmirror` (0/1), `pan`, `tilt` (stopnie), `center`
 - Zdjęcie na kartę SD: `http://<IP>/save`
 - Ustawienia WiFi: `http://<IP>/wifi`
+- Aktualizacja programu: `http://<IP>/update`
 
 Strona, polecenia COM/Telnet i logi na Serial są po angielsku. Na stronie widać dwa liczniki FPS: **browser** (klatki faktycznie odebrane przez przeglądarkę) i **server** (klatki wysłane przez ESP32).
 
@@ -199,6 +232,7 @@ Połącz się przez `pio device monitor` albo `telnet esp32cam.local` i wpisz `h
 - `cam`, `cam res vga`, `cam quality 15`: ustawienia obrazu,
 - `wifi`: stan sieci i zapisane ustawienia,
 - `wifi set sta <ssid> [hasło]`, `wifi set ap <ssid> [hasło]`, `wifi clear yes`: zmiana lub skasowanie zapisanych ustawień WiFi (spacje w „cudzysłowie”; działa po restarcie),
+- `ota`: stan aktualizacji programu (OTA),
 - `restart yes`: restart płytki.
 
 Pełna lista jest w [README biblioteki](lib/EspCamWeb/README.md#serwery-poleceń-com-i-telnet). Polecenia usług wyłączonych w `EspCamFeatures.h` są niedostępne. Telnet nie szyfruje połączenia, więc używaj go tylko w zaufanej sieci.
