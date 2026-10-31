@@ -3,6 +3,8 @@
 
 #include "EspCamWebConfig.h"
 
+#if LED_ON
+
 namespace espcamweb {
 
 class CamLed {
@@ -19,3 +21,5 @@ class CamLed {
 };
 
 }  // namespace espcamweb
+
+#endif  // LED_ON

@@ -2,6 +2,8 @@
 
 #include <Arduino.h>
 
+extern "C" const int ECW_CONFIG_SYMBOL = 1;  // patrz EspCamFeatures.h
+
 namespace espcamweb {
 
 bool EspCamera::begin(const CameraSettings &s) {
@@ -79,12 +81,6 @@ bool EspCamera::setQuality(int quality) {
   return s->set_quality(s, constrain(quality, 4, 63)) == 0;
 }
 
-bool EspCamera::setLed(bool on) {
-  if (!hasLed()) return false;
-  led_->set(on);
-  return true;
-}
-
 bool EspCamera::setVFlip(bool on) {
   sensor_t *s = esp_camera_sensor_get();
   return s->set_vflip(s, on ? 1 : 0) == 0;
@@ -107,6 +103,73 @@ void EspCamera::updateFps(uint32_t nowMs) {
   fpsFrames_ = total;
   fpsLastMs_ = nowMs;
 }
+
+// ---------- Lampa LED ----------
+#if LED_ON
+bool EspCamera::hasLed() const { return led_ && led_->isAvailable(); }
+bool EspCamera::ledOn() const { return hasLed() && led_->isOn(); }
+bool EspCamera::setLed(bool on) {
+  if (!hasLed()) return false;
+  led_->set(on);
+  return true;
+}
+#else
+bool EspCamera::hasLed() const { return false; }
+bool EspCamera::ledOn() const { return false; }
+bool EspCamera::setLed(bool) { return false; }
+#endif
+
+// ---------- Karta SD ----------
+#if SD_ON
+bool EspCamera::hasSd() const { return sd_ && sd_->isAvailable(); }
+uint32_t EspCamera::sdPhotoCount() const { return hasSd() ? sd_->photoCount() : 0; }
+uint64_t EspCamera::sdFreeBytes() const { return hasSd() ? sd_->freeBytes() : 0; }
+String EspCamera::sdLastPhoto() const { return hasSd() ? sd_->lastPhoto() : String(); }
+String EspCamera::savePhotoToSd() {
+  if (!hasSd()) return String();
+  camera_fb_t *fb = capture();
+  if (!fb) return String();
+  String path = sd_->savePhoto(fb->buf, fb->len);
+  release(fb);
+  if (path.length()) Serial.printf("Zapisano zdjęcie: %s\n", path.c_str());
+  return path;
+}
+#else
+bool EspCamera::hasSd() const { return false; }
+uint32_t EspCamera::sdPhotoCount() const { return 0; }
+uint64_t EspCamera::sdFreeBytes() const { return 0; }
+String EspCamera::sdLastPhoto() const { return String(); }
+String EspCamera::savePhotoToSd() { return String(); }
+#endif
+
+// ---------- Serwa ----------
+#if SERVO_MOTORS_ON
+bool EspCamera::hasServos() const { return servos_ && servos_->isAvailable(); }
+int EspCamera::pan() const { return hasServos() ? servos_->pan() : -1; }
+int EspCamera::tilt() const { return hasServos() ? servos_->tilt() : -1; }
+bool EspCamera::setPan(int deg) {
+  if (!hasServos()) return false;
+  servos_->setPan(deg);
+  return true;
+}
+bool EspCamera::setTilt(int deg) {
+  if (!hasServos()) return false;
+  servos_->setTilt(deg);
+  return true;
+}
+bool EspCamera::centerServos() {
+  if (!hasServos()) return false;
+  servos_->center();
+  return true;
+}
+#else
+bool EspCamera::hasServos() const { return false; }
+int EspCamera::pan() const { return -1; }
+int EspCamera::tilt() const { return -1; }
+bool EspCamera::setPan(int) { return false; }
+bool EspCamera::setTilt(int) { return false; }
+bool EspCamera::centerServos() { return false; }
+#endif
 
 const char *EspCamera::frameSizeName(framesize_t fs) {
   switch (fs) {

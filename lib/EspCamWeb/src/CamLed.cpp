@@ -1,5 +1,7 @@
 #include "CamLed.h"
 
+#if LED_ON
+
 #include <Arduino.h>
 
 namespace espcamweb {
@@ -20,3 +22,5 @@ void CamLed::set(bool on) {
 }
 
 }  // namespace espcamweb
+
+#endif  // LED_ON

@@ -26,6 +26,7 @@ label.t{display:block;color:var(--muted);font-size:12px;text-transform:uppercase
 button{flex:1;background:#232a33;color:var(--text);border:1px solid var(--line);border-radius:6px;padding:8px 10px;font:inherit;cursor:pointer}
 button.on{background:var(--accent);border-color:var(--accent)}
 input[type=range]{width:100%;accent-color:var(--accent)}
+[hidden]{display:none!important}
 .row{display:flex;justify-content:space-between;align-items:center}
 a{color:var(--accent)}
 .foot{color:var(--muted);font-size:12px}
@@ -59,8 +60,25 @@ a{color:var(--accent)}
     <div>
       <label class="t">Obraz</label>
       <div class="btns">
-        <button id="led">Lampa</button><button id="vflip">Flip</button><button id="hmirror">Lustro</button>
+        <button id="led" hidden>Lampa</button><button id="vflip">Flip</button><button id="hmirror">Lustro</button>
       </div>
+    </div>
+    <div id="secServo" hidden>
+      <label class="t">Ruch kamery</label>
+      <div class="row"><span>Poziom</span><span id="panV">-</span></div>
+      <input type="range" id="pan" min="0" max="180" step="1">
+      <div class="row"><span>Pion</span><span id="tiltV">-</span></div>
+      <input type="range" id="tilt" min="0" max="180" step="1">
+      <div class="btns">
+        <button data-a="pan" data-d="-10">&#9664;</button><button data-a="tilt" data-d="10">&#9650;</button>
+        <button id="center">&#9679;</button>
+        <button data-a="tilt" data-d="-10">&#9660;</button><button data-a="pan" data-d="10">&#9654;</button>
+      </div>
+    </div>
+    <div id="secSd" hidden>
+      <label class="t">Karta SD</label>
+      <div class="btns"><button id="save">Zapisz zdjęcie na SD</button></div>
+      <div class="foot" id="sdInfo"></div>
     </div>
     <div class="foot" id="info"></div>
     <div class="foot"><a href="/capture" target="_blank">Zdjęcie (JPEG)</a> · <a id="raw" target="_blank">Surowy strumień</a></div>
@@ -139,7 +157,14 @@ async function refresh() {
     document.querySelectorAll('#fs button').forEach(b => b.classList.toggle('on', +b.dataset.v === s.framesize));
     ['led', 'vflip', 'hmirror'].forEach(k => $(k).classList.toggle('on', !!s[k]));
     document.querySelectorAll('#fs button').forEach(b => b.hidden = +b.dataset.v > s.maxFramesize);
-    $('led').hidden = !s.ledAvailable;
+    $('led').hidden = !s.features.led;
+    $('secSd').hidden = !s.features.sd;
+    $('secServo').hidden = !s.features.servos;
+    if (s.features.sd) $('sdInfo').textContent = `zdjęć: ${s.sdPhotos} · wolne: ${s.sdFreeMB} MB` + (s.sdLast ? ` · ostatnie: ${s.sdLast}` : '');
+    if (s.features.servos) {
+      pos.pan = s.pan; pos.tilt = s.tilt;
+      ['pan', 'tilt'].forEach(k => { $(k + 'V').textContent = s[k] + '°'; if (document.activeElement !== $(k)) $(k).value = s[k]; });
+    }
     $('info').textContent = `${s.width}×${s.height} · ${s.mode} ${s.ip} · PSRAM: ${s.psram ? 'tak' : 'nie'} · klienci: ${s.clients}`;
   } catch (e) {}
 }
@@ -148,6 +173,22 @@ document.querySelectorAll('#fs button').forEach(b => b.onclick = () => ctl('fram
 $('q').oninput = e => $('qv').textContent = e.target.value;
 $('q').onchange = e => ctl('quality', e.target.value);
 ['led', 'vflip', 'hmirror'].forEach(k => $(k).onclick = () => ctl(k, $(k).classList.contains('on') ? 0 : 1));
+
+const pos = { pan: 90, tilt: 90 };
+['pan', 'tilt'].forEach(k => {
+  $(k).oninput = e => $(k + 'V').textContent = e.target.value + '°';
+  $(k).onchange = e => ctl(k, e.target.value);
+});
+document.querySelectorAll('#secServo [data-a]').forEach(b => b.onclick = () => ctl(b.dataset.a, pos[b.dataset.a] + +b.dataset.d));
+$('center').onclick = () => ctl('center', 1);
+$('save').onclick = async () => {
+  $('save').disabled = true;
+  try {
+    const r = await (await fetch('/save')).json();
+    $('sdInfo').textContent = r.ok ? `zapisano: ${r.file}` : `błąd: ${r.error}`;
+  } catch (e) { $('sdInfo').textContent = 'błąd zapisu'; }
+  $('save').disabled = false;
+};
 
 refresh();
 setInterval(refresh, 1000);

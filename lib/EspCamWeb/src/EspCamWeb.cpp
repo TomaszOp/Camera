@@ -6,8 +6,20 @@ namespace espcamweb {
 
 bool EspCamWeb::begin(const EspCamWebConfig &config) {
   fpsLogIntervalMs_ = config.fpsLogIntervalMs;
+#if LED_ON
   led_.begin(config.led);
+  camera_.attachLed(led_);
+#endif
   if (!camera_.begin(config.camera)) return false;
+  // Brak karty lub serw nie jest błędem krytycznym - usługa po prostu nie będzie dostępna
+#if SD_ON
+  sd_.begin(config.sd);
+  camera_.attachSd(sd_);
+#endif
+#if SERVO_MOTORS_ON
+  servos_.begin(config.servos);
+  camera_.attachServos(servos_);
+#endif
 
   WifiSettings wifi = config.wifi;
   wifi.mdnsHttpPort = config.server.httpPort;

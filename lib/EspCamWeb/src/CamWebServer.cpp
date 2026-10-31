@@ -28,6 +28,7 @@ bool CamWebServer::begin(const ServerSettings &settings) {
       {"/status", HTTP_GET, statusHandler, this},
       {"/control", HTTP_GET, controlHandler, this},
       {"/capture", HTTP_GET, captureHandler, this},
+      {"/save", HTTP_GET, saveHandler, this},
   };
   if (httpd_start(&webHttpd_, &config) != ESP_OK) {
     Serial.printf("Nie udało się uruchomić serwera na porcie %u\n", settings_.httpPort);
@@ -74,6 +75,24 @@ esp_err_t CamWebServer::captureHandler(httpd_req_t *req) {
   return res;
 }
 
+esp_err_t CamWebServer::saveHandler(httpd_req_t *req) {
+  EspCamera &cam = self(req)->camera_;
+  httpd_resp_set_type(req, "application/json");
+  httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+  if (!cam.hasSd()) {
+    httpd_resp_set_status(req, "503 Service Unavailable");
+    return httpd_resp_sendstr(req, "{\"ok\":false,\"error\":\"brak karty SD\"}");
+  }
+  String path = cam.savePhotoToSd();
+  if (!path.length()) {
+    httpd_resp_set_status(req, HTTPD_500);
+    return httpd_resp_sendstr(req, "{\"ok\":false,\"error\":\"błąd zapisu\"}");
+  }
+  char json[96];
+  snprintf(json, sizeof(json), "{\"ok\":true,\"file\":\"%s\"}", path.c_str());
+  return httpd_resp_sendstr(req, json);
+}
+
 esp_err_t CamWebServer::statusHandler(httpd_req_t *req) {
   CamWebServer *srv = self(req);
   EspCamera &cam = srv->camera_;
@@ -81,13 +100,19 @@ esp_err_t CamWebServer::statusHandler(httpd_req_t *req) {
   bool ap = WiFi.status() != WL_CONNECTED;
   String ip = ap ? WiFi.softAPIP().toString() : WiFi.localIP().toString();
 
-  char json[400];
+  CameraFeatures f = cam.features();
+  String last = cam.sdLastPhoto();
+
+  char json[640];
   snprintf(json, sizeof(json),
-           "{\"fps\":%.1f,\"framesize\":%d,\"maxFramesize\":%d,\"name\":\"%s\",\"width\":%u,\"height\":%u,"
-           "\"quality\":%d,\"ledAvailable\":%d,\"led\":%d,\"vflip\":%d,\"hmirror\":%d,\"rssi\":%d,"
+           "{\"features\":{\"led\":%d,\"sd\":%d,\"servos\":%d},"
+           "\"sdPhotos\":%u,\"sdFreeMB\":%u,\"sdLast\":\"%s\",\"pan\":%d,\"tilt\":%d,"
+           "\"fps\":%.1f,\"framesize\":%d,\"maxFramesize\":%d,\"name\":\"%s\",\"width\":%u,\"height\":%u,"
+           "\"quality\":%d,\"led\":%d,\"vflip\":%d,\"hmirror\":%d,\"rssi\":%d,"
            "\"psram\":%d,\"clients\":%u,\"streamPort\":%u,\"mode\":\"%s\",\"ip\":\"%s\"}",
-           cam.fps(), (int)fs, (int)cam.maxFrameSize(), EspCamera::frameSizeName(fs),
-           resolution[fs].width, resolution[fs].height, cam.quality(), cam.hasLed(), cam.ledOn(), cam.vflip(), cam.hmirror(), ap ? 0 : (int)WiFi.RSSI(),
+           f.led, f.sd, f.servos, (unsigned)cam.sdPhotoCount(), (unsigned)(cam.sdFreeBytes() >> 20),
+           last.c_str(), cam.pan(), cam.tilt(), cam.fps(), (int)fs, (int)cam.maxFrameSize(), EspCamera::frameSizeName(fs),
+           resolution[fs].width, resolution[fs].height, cam.quality(), cam.ledOn(), cam.vflip(), cam.hmirror(), ap ? 0 : (int)WiFi.RSSI(),
            cam.hasPsram(), (unsigned)srv->streamClients_, srv->settings_.streamPort, ap ? "AP" : "STA",
            ip.c_str());
 
@@ -119,6 +144,12 @@ esp_err_t CamWebServer::controlHandler(httpd_req_t *req) {
     ok = cam.setHMirror(v != 0);
   } else if (!strcmp(var, "led")) {
     ok = cam.setLed(v != 0);
+  } else if (!strcmp(var, "pan")) {
+    ok = cam.setPan(v);
+  } else if (!strcmp(var, "tilt")) {
+    ok = cam.setTilt(v);
+  } else if (!strcmp(var, "center")) {
+    ok = cam.centerServos();
   } else {
     ok = false;
   }
