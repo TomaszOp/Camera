@@ -1,6 +1,6 @@
 # EspCamWeb
 
-Biblioteka PlatformIO do podglądu kamery **ESP32-CAM** na żywo przez WWW: strumień MJPEG, liczniki FPS, zmiana rozdzielczości i jakości, flip/lustro. Opcjonalnie: lampa LED, zapis zdjęć na kartę microSD i serwa pan/tilt.
+Biblioteka PlatformIO do podglądu kamery **ESP32-CAM** na żywo przez WWW: strumień MJPEG, liczniki FPS, zmiana rozdzielczości i jakości, flip/lustro. Opcjonalnie: lampa LED, zapis zdjęć na kartę microSD, serwa pan/tilt oraz sterowanie poleceniami tekstowymi przez port szeregowy (COM) i Telnet.
 Domyślnie skonfigurowana pod **AI Thinker (OV2640, 4 MB PSRAM)**, ale piny i wszystkie parametry można zmienić.
 
 Wymaga Arduino core 3.x (platforma pioarduino). Moduł `esp_camera` jest wbudowany w core, więc nie trzeba dodawać zewnętrznej biblioteki kamery.
@@ -28,6 +28,8 @@ board = esp32cam
 framework = arduino
 monitor_speed = 115200
 board_build.partitions = huge_app.csv      ; aplikacja ~1,1 MB nie mieści się w domyślnej partycji
+lib_deps =
+    lennarthennigs/ESP Telnet@^2.3.0       ; tylko dla TELNET_SERVER_ON (dociąga się też z library.json)
 build_flags =
     -DBOARD_HAS_PSRAM
     -mfix-esp32-psram-cache-issue
@@ -43,13 +45,17 @@ Moduły włącza się w pliku `include/config.h` projektu (1 = włączony, 0 = w
 #define LED_ON          1   // lampa LED błysku          (CamLed)
 #define SD_ON           0   // karta microSD na zdjęcia  (CamSdCard)
 #define SERVO_MOTORS_ON 0   // serwa poziom/pion         (CamServos)
+#define COM_SERVER_ON    0  // polecenia przez port szeregowy (CamComServer)
+#define TELNET_SERVER_ON 0  // polecenia przez Telnet         (CamTelnetServer)
+#define TELNET_PORT      23
+#define TELNET_PASSWORD  "" // "" = bez hasła
 
 #define LED_PIN        4
 #define SERVO_PAN_PIN  12
 #define SERVO_TILT_PIN 13
 ```
 
-- Bez `config.h` obowiązują wartości domyślne: LED włączony, SD i serwa wyłączone.
+- Bez `config.h` obowiązują wartości domyślne: LED włączony, a SD, serwa oraz serwery COM i Telnet wyłączone.
 - **Ważne:** PlatformIO nie przekazuje katalogu `include/` projektu do bibliotek z `lib/`. Dlatego w `build_flags` musi być `-Iinclude`. Inaczej biblioteka i program zbudowałyby się z różnymi ustawieniami. Taką niezgodność wykrywa linker i zgłasza błąd w rodzaju `undefined reference to 'espcamweb_config_led1_sd1_servo0'`.
 - `EspCamFeatures.h` sprawdza przy kompilacji kolizje pinów: z kamerą, z kartą SD, LED z serwem, pan z tilt oraz piny 34–39, które są tylko wejściami. Kolizja daje błąd `#error` z opisem.
 
@@ -87,6 +93,70 @@ Wnioski:
 - GPIO2 musi być w stanie niskim lub nieustalonym przy wgrywaniu firmware. Karta włożona w gniazdo czasem to zakłóca. Jeśli wgrywanie się nie udaje, wyjmij kartę na ten czas.
 - **GPIO12 to pin strapping**, który ustala napięcie pamięci flash. Jeśli serwo podciągnie go do stanu wysokiego przy starcie, płytka się nie uruchomi. Wtedy zamień piny serw albo podłącz serwo przez rezystor lub tranzystor. Serwa zasilaj osobno z 5 V, nie z płytki.
 - Do serw nie używam biblioteki ESP32Servo, bo sama przydziela timery LEDC i koliduje z kamerą.
+
+## Serwery poleceń: COM i Telnet
+
+Oba serwery są, tak jak strona WWW, dodatkami korzystającymi wyłącznie z `EspCamera`. Polecenia wykonuje wspólna klasa `CamCommands`, więc na COM i przez Telnet są identyczne.
+- Słowa kluczowe są po angielsku, odpowiedzi po polsku, a wielkość liter nie ma znaczenia.
+- Polecenie usługi niedostępnej (wyłączonej w `config.h` albo niedziałającej, np. bez karty) zwraca komunikat „Usługa niedostępna”, a `help` go nie pokazuje.
+
+| Polecenie | Usługa | Działanie |
+|---|---|---|
+| `help` / `?` | – | lista dostępnych poleceń |
+| `info` | – | wersja, czas pracy, wolny heap/PSRAM, WiFi, lista usług |
+| `status` | – | skrót stanu: kamera, lampa, serwa, karta SD |
+| `wifi` | – | tryb STA/AP, SSID, IP, RSSI |
+| `cam` | – | rozdzielczość, jakość, FPS, flip, lustro |
+| `cam res qvga\|vga\|svga\|xga` | – | zmiana rozdzielczości |
+| `cam quality N` | – | jakość JPEG 4–63 (mniej = lepsza) |
+| `cam flip on\|off`, `cam mirror on\|off` | – | odwrócenie obrazu |
+| `photo` | – / SD | z kartą: zapis na SD (nazwa pliku i rozmiar); bez karty: tylko rozmiar klatki |
+| `led` | LED | stan lampy |
+| `led on\|off\|toggle` | LED | włącz / wyłącz / przełącz |
+| `servo` | serwa | pozycje i zakresy |
+| `servo pan N`, `servo tilt N` | serwa | kąt poziomo / pionowo |
+| `servo N M` | serwa | oba kąty naraz (pan tilt) |
+| `servo left\|right\|up\|down [krok]` | serwa | przesunięcie o krok (domyślnie 10°) |
+| `servo center` | serwa | pozycja środkowa |
+| `sd` | SD | liczba zdjęć, wolne MB, ostatnie zdjęcie |
+| `sd list [N]` | SD | ostatnie N zdjęć (domyślnie 10) z rozmiarami |
+| `restart yes` | – | restart płytki (wymaga potwierdzenia `yes`) |
+| `quit` / `exit` | – | rozłączenie (Telnet) |
+
+### Połączenie
+
+- **COM:** `pio device monitor` (115200). Serwer korzysta z tego samego portu `Serial`, na który idą logi. Przy włączonym serwerze COM okresowy log FPS jest domyślnie wyłączony, żeby nie przerywał pisania. FPS pokazują polecenia `cam` i `status`. Serwer odsyła wpisywane znaki (echo) i obsługuje Backspace.
+- **Telnet:** `telnet esp32cam.local` albo `telnet <IP>`; na Windows np. PuTTY w trybie Telnet. Działa w trybie STA i AP.
+
+```text
+$ telnet esp32cam.local
+EspCamWeb 1.1.0 - ESP32-CAM
+Wpisz help, aby zobaczyć polecenia, quit - rozłącz.
+> led on
+Lampa: wł.
+> servo 60 100
+Usługa niedostępna: serwa (wyłączona w config.h lub nie działa)
+> photo
+Zapisano /photos/IMG_00012.jpg (48 KB)
+> sd list 3
+  /photos/IMG_00012.jpg  48 KB
+  /photos/IMG_00011.jpg  47 KB
+  /photos/IMG_00010.jpg  51 KB
+> quit
+Do widzenia.
+```
+
+### Telnet: biblioteka i ograniczenia
+
+- Core Arduino nie ma serwera telnet, jest tylko surowy `WiFiServer`. Dlatego `CamTelnetServer` używa gotowej biblioteki **ESPTelnet** (`lennarthennigs/ESP Telnet` 2.3.0, aktualizowana w 2026 r.). Kompiluje się z core 3.x bez ostrzeżeń.
+- Obsługiwany jest **jeden klient naraz**. Kolejne połączenie jest odrzucane, a na Serial pojawia się komunikat.
+- **Telnet nie szyfruje** niczego, także hasła `TELNET_PASSWORD`. Używaj go tylko w zaufanej sieci domowej.
+- ESPTelnet dołącza `ETH.h`, więc do programu trafia ok. 12 KB obsługi Ethernetu, nawet przy `TELNET_SERVER_ON 0`. Nie da się tego wyłączyć bez zmian w pakiecie frameworka. **Nie dodawaj `lib_ignore = Ethernet`:** pioarduino usuwa wtedy ścieżki Ethernetu we współdzielonym pakiecie frameworka, co psuje kompilację również innych projektów.
+
+### Wątki
+
+Polecenia COM i Telnet wykonują się w `loop()`, a strona WWW w zadaniach httpd. `EspCamera` chroni operacje zmieniające stan (sensor, lampa, serwa, zapis na SD) rekurencyjnym mutexem FreeRTOS. Dzięki temu można np. zrobić zdjęcie z Telnetu w trakcie oglądania strumienia.
+
 ## Klasy
 
 Każdej klasy można używać samodzielnie. Wszystko jest w przestrzeni nazw `espcamweb`, a jeden nagłówek `#include <EspCamWeb.h>` dołącza całość.
@@ -99,6 +169,9 @@ Każdej klasy można używać samodzielnie. Wszystko jest w przestrzeni nazw `es
 | `CamLed` | `CamLed.h` | `LED_ON`. Lampa LED przez `ledcAttachChannel` (GPIO4, kanał 2, słaba jasność). |
 | `CamSdCard` | `CamSdCard.h` | `SD_ON`. Karta microSD (SD_MMC 1-bit): montowanie, wolne miejsce, zapis JPEG jako `/photos/IMG_00001.jpg`… Numeracja jest kontynuowana po restarcie, bo płytka nie ma zegara RTC. |
 | `CamServos` | `CamServos.h` | `SERVO_MOTORS_ON`. Dwa serwa: pan (poziom) i tilt (pion), PWM 50 Hz, kąty 0–180° z limitami. |
+| `CamCommands` | `CamCommands.h` | Wspólny interpreter poleceń tekstowych: `execute(linia, Print&)`. |
+| `CamComServer` | `CamComServer.h` | `COM_SERVER_ON`. Polecenia przez port szeregowy, obsługiwane w `loop()` przez `handle()`. |
+| `CamTelnetServer` | `CamTelnetServer.h` | `TELNET_SERVER_ON`. Polecenia przez Telnet (ESPTelnet), `handle()` w `loop()`, opcjonalne hasło. |
 | `EspCamWeb` | `EspCamWeb.h` | Opcjonalna fasada, która uruchamia wszystkie powyższe naraz. |
 
 Konfiguracja jest w `EspCamWebConfig.h`. Każda struktura ma domyślne wartości.
@@ -129,11 +202,13 @@ Konfiguracja jest w `EspCamWebConfig.h`. Każda struktura ma domyślne wartości
   - pozycja startowa `panStart`/`tiltStart`: 90°
   - odwrócenie kierunku: `invertPan`, `invertTilt`
 - **`ServerSettings`**: `httpPort` 80, `streamPort` 81
-- **`EspCamWebConfig`**: wszystkie powyższe plus `fpsLogIntervalMs` (5000, a 0 wyłącza wypisywanie FPS)
+- **`ComServerSettings`**: `echo` (`true`), `prompt` (`"> "`)
+- **`TelnetSettings`**: `port` (`TELNET_PORT`), `password` (`TELNET_PASSWORD`)
+- **`EspCamWebConfig`**: wszystkie powyższe plus `fpsLogIntervalMs` (5000, a przy `COM_SERVER_ON` 0, czyli bez okresowego logu)
 
 Inny moduł kamery: wypełnij własną strukturę `CameraPins` i przypisz ją do `config.camera.pins`.
 
-Zależności: `CamWebServer` → `EspCamera` → `CamLed` / `CamSdCard` / `CamServos` (każdy opcjonalny). `CamWifi` jest niezależny.
+Zależności: `CamWebServer` / `CamComServer` / `CamTelnetServer` → `EspCamera` → `CamLed` / `CamSdCard` / `CamServos` (każdy opcjonalny). Serwery COM i Telnet korzystają z `CamCommands`. `CamWifi` jest niezależny.
 Moduły dołącza się do kamery przez referencję, a nie tworzy wewnątrz niej. Dzięki temu kamera działa bez nich, a każdą klasę można też używać samodzielnie.
 
 ### Usługi w `EspCamera`
@@ -142,8 +217,8 @@ Moduły dołącza się do kamery przez referencję, a nie tworzy wewnątrz niej.
 |---|---|---|
 | wszystkie | – | `features()` zwraca `{led, sd, servos}`: włączone w `config.h` **i** poprawnie uruchomione (np. karta włożona) |
 | lampa | `attachLed(CamLed&)` | `hasLed()`, `setLed(bool)`, `ledOn()` |
-| karta SD | `attachSd(CamSdCard&)` | `hasSd()`, `savePhotoToSd()` (zwraca ścieżkę pliku), `sdPhotoCount()`, `sdFreeBytes()`, `sdLastPhoto()` |
-| serwa | `attachServos(CamServos&)` | `hasServos()`, `setPan(deg)`, `setTilt(deg)`, `centerServos()`, `pan()`, `tilt()` |
+| karta SD | `attachSd(CamSdCard&)` | `hasSd()`, `savePhotoToSd(&bajty)` (zwraca ścieżkę pliku), `sdPhotoCount()`, `sdFreeBytes()`, `sdLastPhoto()`, `sdListPhotos(Print&, N)` |
+| serwa | `attachServos(CamServos&)` | `hasServos()`, `setPan(deg)`, `setTilt(deg)`, `centerServos()`, `pan()`, `tilt()`, `servoLimits(...)` |
 
 Metody `attach…()` istnieją tylko wtedy, gdy moduł jest włączony. Pozostałe metody istnieją zawsze, a przy wyłączonym module zwracają `false`, 0 albo -1. Dzięki temu serwer nie potrzebuje żadnych `#if`.
 

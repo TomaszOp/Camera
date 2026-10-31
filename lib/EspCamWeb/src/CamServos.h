@@ -19,6 +19,7 @@ class CamServos {
   void center();
   int pan() const { return pan_; }
   int tilt() const { return tilt_; }
+  const ServoSettings &settings() const { return s_; }
 
  private:
   void write(uint8_t pin, int deg, bool invert);

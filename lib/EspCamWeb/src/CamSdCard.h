@@ -21,6 +21,8 @@ class CamSdCard {
   String savePhoto(const uint8_t *data, size_t len);
 
   uint32_t photoCount() const { return photoCount_; }
+  // Wypisuje ostatnie (najwyżej numerowane) zdjęcia: nazwa i rozmiar; zwraca ich liczbę
+  uint32_t listPhotos(Print &out, uint32_t maxCount) const;
   const String &lastPhoto() const { return lastPhoto_; }
   uint64_t totalBytes() const;
   uint64_t freeBytes() const;

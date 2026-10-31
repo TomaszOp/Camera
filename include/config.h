@@ -9,6 +9,12 @@
                            // piny SDMMC są stałe w ESP32: CLK 14, CMD 15, D0 2 - nie konfiguruje się ich
 #define SERVO_MOTORS_ON 0  // dwa serwa: poziom (pan) i pion (tilt)
 
+// ---------- Serwery poleceń (te same polecenia: help, info, led, servo, photo...) ----------
+#define COM_SERVER_ON    1  // polecenia przez port szeregowy (pio device monitor)
+#define TELNET_SERVER_ON 1  // polecenia przez Telnet: telnet esp32cam.local
+#define TELNET_PORT      23
+#define TELNET_PASSWORD  ""  // "" = bez hasła; telnet NIE szyfruje - tylko zaufana sieć
+
 // ---------- Lampa LED ----------
 #define LED_PIN 4  // dioda błysku na ESP32-CAM AI Thinker
 

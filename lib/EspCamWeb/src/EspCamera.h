@@ -1,10 +1,14 @@
 // Kamera - centrum biblioteki: inicjalizacja, pobieranie klatek, ustawienia obrazu, FPS
 // oraz opcjonalne usługi: lampa LED, karta SD, serwa pan/tilt (włączane w config.h).
 // Działa samodzielnie, bez serwera WWW. Metody wyłączonych usług istnieją zawsze i zwracają false.
+// Bezpieczna wątkowo: metody zmieniające stan są chronione muteksem (wołają je zadania httpd,
+// loop() z serwerami COM/Telnet itd.).
 #pragma once
 
 #include <Arduino.h>
 #include <atomic>
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
 #include "EspCamWebConfig.h"
 #include "CamLed.h"
 #include "CamSdCard.h"
@@ -22,7 +26,9 @@ struct CameraFeatures {
 class EspCamera {
  public:
   // Odwołanie do symbolu konfiguracji - wykrywa niezgodny config.h (patrz EspCamFeatures.h)
-  EspCamera() { asm volatile("" ::"r"(&ECW_CONFIG_SYMBOL)); }
+  EspCamera() : mutex_(xSemaphoreCreateRecursiveMutex()) { asm volatile("" ::"r"(&ECW_CONFIG_SYMBOL)); }
+  EspCamera(const EspCamera &) = delete;
+  EspCamera &operator=(const EspCamera &) = delete;
 
   bool begin(const CameraSettings &settings);
 
@@ -65,7 +71,9 @@ class EspCamera {
 #endif
   bool hasSd() const;
   // Robi zdjęcie i zapisuje je na karcie; zwraca ścieżkę pliku albo pusty String
-  String savePhotoToSd();
+  String savePhotoToSd(size_t *bytes = nullptr);
+  // Wypisuje ostatnie maxCount zdjęć z karty (nazwa i rozmiar); zwraca liczbę wypisanych
+  uint32_t sdListPhotos(Print &out, uint32_t maxCount) const;
   uint32_t sdPhotoCount() const;
   uint64_t sdFreeBytes() const;
   String sdLastPhoto() const;
@@ -80,6 +88,7 @@ class EspCamera {
   bool centerServos();
   int pan() const;   // -1 bez serw
   int tilt() const;
+  bool servoLimits(int &panMin, int &panMax, int &tiltMin, int &tiltMax) const;
 
   static const char *frameSizeName(framesize_t fs);
 
@@ -95,6 +104,10 @@ class EspCamera {
 #endif
   bool hasPsram_ = false;
   framesize_t maxFrameSize_ = FRAMESIZE_QVGA;
+  // Rekurencyjny mutex FreeRTOS (std::recursive_mutex dociąga ok. 60 KB kodu wyjątków C++)
+  // dla operacji zmieniających stan: sensor, lampa, serwa, SD
+  SemaphoreHandle_t mutex_;
+  friend class EspCameraLock;
   std::atomic<uint32_t> frames_{0};
   uint32_t fpsFrames_ = 0;
   uint32_t fpsLastMs_ = 0;

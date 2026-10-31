@@ -64,6 +64,16 @@ struct ServerSettings {
   uint16_t streamPort = 81;  // /stream - osobna instancja httpd
 };
 
+struct ComServerSettings {
+  bool echo = true;           // odsyłaj wpisywane znaki (monitor zwykle nie pokazuje ich sam)
+  const char *prompt = "> ";
+};
+
+struct TelnetSettings {
+  uint16_t port = TELNET_PORT;
+  const char *password = TELNET_PASSWORD;  // "" = bez hasła; telnet nie szyfruje niczego
+};
+
 struct EspCamWebConfig {
   CameraSettings camera;
   WifiSettings wifi;
@@ -71,7 +81,11 @@ struct EspCamWebConfig {
   SdSettings sd;
   ServoSettings servos;
   ServerSettings server;
-  uint32_t fpsLogIntervalMs = 5000;  // co ile wypisywać FPS na Serial, 0 = wcale
+  ComServerSettings com;
+  TelnetSettings telnet;
+  // Co ile wypisywać FPS na Serial, 0 = wcale. Przy serwerze COM domyślnie wyłączone, żeby
+  // logi nie przerywały wpisywania poleceń (FPS pokazują polecenia cam i status).
+  uint32_t fpsLogIntervalMs = COM_SERVER_ON ? 0 : 5000;
 };
 
 }  // namespace espcamweb

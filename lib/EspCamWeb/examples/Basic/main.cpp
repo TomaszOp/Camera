@@ -18,6 +18,6 @@ void setup() {
 }
 
 void loop() {
-  cam.loop();  // FPS na Serial co 5 s
-  delay(100);
+  cam.loop();  // FPS na Serial co 5 s, serwery COM/Telnet (gdy włączone w config.h)
+  delay(10);
 }

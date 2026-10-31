@@ -1,0 +1,47 @@
+#include "CamComServer.h"
+
+#if COM_SERVER_ON
+
+namespace espcamweb {
+
+static const unsigned MAX_LINE = 128;
+
+void CamComServer::begin(const ComServerSettings &settings) {
+  s_ = settings;
+  io_.print("\r\nSerwer poleceń COM gotowy - wpisz help\r\n");
+  prompt();
+}
+
+void CamComServer::prompt() {
+  if (s_.prompt) io_.print(s_.prompt);
+}
+
+void CamComServer::handle() {
+  while (io_.available()) {
+    char c = io_.read();
+    if (c == '\r' || c == '\n') {
+      bool crlf = c == '\n' && lastWasCr_;
+      lastWasCr_ = c == '\r';
+      if (crlf) continue;  // druga połowa CR LF
+      io_.print("\r\n");
+      commands_.execute(line_, io_);  // quit/exit nie dotyczy portu szeregowego
+      line_ = "";
+      prompt();
+      continue;
+    }
+    lastWasCr_ = false;
+    if (c == '\b' || c == 127) {
+      if (line_.length()) {
+        line_.remove(line_.length() - 1);
+        if (s_.echo) io_.print("\b \b");
+      }
+    } else if (c >= ' ' && line_.length() < MAX_LINE) {
+      line_ += c;
+      if (s_.echo) io_.write(c);
+    }
+  }
+}
+
+}  // namespace espcamweb
+
+#endif  // COM_SERVER_ON

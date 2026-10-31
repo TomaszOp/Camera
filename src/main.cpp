@@ -1,6 +1,7 @@
 // ESP32-CAM AI Thinker - podgląd kamery na żywo przez WWW (biblioteka EspCamWeb).
 // EspCamera jest centrum: lampa, karta SD i serwa są do niej dołączane, a serwer WWW
-// dostaje tylko referencję do kamery. Moduły włącza się w include/config.h.
+// dostaje tylko referencję do kamery. Serwery poleceń COM i Telnet są, tak jak strona WWW,
+// dodatkami korzystającymi z kamery. Moduły i serwery włącza się w include/config.h.
 // Krótsza wersja przez fasadę EspCamWeb: lib/EspCamWeb/examples/Basic/main.cpp
 
 #include <Arduino.h>
@@ -13,6 +14,12 @@ using namespace espcamweb;
 static EspCamera camera;
 static CamWifi wifi;
 static CamWebServer server(camera);
+#if COM_SERVER_ON
+static CamComServer com(camera);  // Serial
+#endif
+#if TELNET_SERVER_ON
+static CamTelnetServer telnet(camera);
+#endif
 #if LED_ON
 static CamLed led;
 #endif
@@ -59,18 +66,31 @@ void setup() {
 
   ServerSettings web;  // porty 80 (strona) i 81 (strumień)
   server.begin(web);
+#if TELNET_SERVER_ON
+  telnet.begin(TelnetSettings());  // TELNET_PORT, TELNET_PASSWORD
+#endif
 
   String ip = wifi.ip().toString();
   Serial.printf("Strona: http://%s/  strumień: http://%s:%u/stream\n", ip.c_str(), ip.c_str(),
                 web.streamPort);
+#if COM_SERVER_ON
+  com.begin(ComServerSettings());
+#endif
 }
 
 void loop() {
   static uint32_t lastLog = millis(), lastFrames = 0;
   uint32_t now = millis();
   camera.updateFps(now);
+#if COM_SERVER_ON
+  com.handle();
+#endif
+#if TELNET_SERVER_ON
+  telnet.handle();
+#endif
 
-  if (now - lastLog >= 5000) {
+  // Bez serwera COM: FPS co 5 s na Serial (z serwerem pokazują go polecenia cam/status)
+  if (!COM_SERVER_ON && now - lastLog >= 5000) {
     uint32_t total = camera.frameCount();
     Serial.printf("FPS: %.1f, klienci: %u, wolna PSRAM: %u KB\n",
                   (total - lastFrames) * 1000.0f / (now - lastLog), server.streamClients(),
@@ -78,5 +98,5 @@ void loop() {
     lastFrames = total;
     lastLog = now;
   }
-  delay(100);
+  delay(10);  // krótko - serwery COM/Telnet obsługiwane są w loop()
 }

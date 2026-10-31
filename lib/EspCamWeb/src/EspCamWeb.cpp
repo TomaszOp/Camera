@@ -25,17 +25,29 @@ bool EspCamWeb::begin(const EspCamWebConfig &config) {
   wifi.mdnsHttpPort = config.server.httpPort;
   if (!wifi_.begin(wifi)) return false;
   if (!server_.begin(config.server)) return false;
+#if TELNET_SERVER_ON
+  telnet_.begin(config.telnet);
+#endif
 
   String ip = wifi_.ip().toString();
   Serial.printf("Strona: http://%s:%u/  strumień: http://%s:%u/stream\n", ip.c_str(),
                 config.server.httpPort, ip.c_str(), config.server.streamPort);
   logLastMs_ = millis();
+#if COM_SERVER_ON
+  com_.begin(config.com);
+#endif
   return true;
 }
 
 void EspCamWeb::loop() {
   uint32_t now = millis();
   camera_.updateFps(now);
+#if COM_SERVER_ON
+  com_.handle();
+#endif
+#if TELNET_SERVER_ON
+  telnet_.handle();
+#endif
   if (!fpsLogIntervalMs_ || now - logLastMs_ < fpsLogIntervalMs_) return;
 
   uint32_t total = camera_.frameCount();

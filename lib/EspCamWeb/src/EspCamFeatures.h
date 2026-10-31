@@ -16,6 +16,21 @@
 #define SERVO_MOTORS_ON 0
 #endif
 
+#ifndef COM_SERVER_ON
+#define COM_SERVER_ON 0
+#endif
+#ifndef TELNET_SERVER_ON
+#define TELNET_SERVER_ON 0
+#endif
+#ifndef TELNET_PORT
+#define TELNET_PORT 23
+#endif
+#ifndef TELNET_PASSWORD
+#define TELNET_PASSWORD ""  // pusty = bez hasła
+#endif
+
+#define ESPCAMWEB_VERSION "1.1.0"
+
 #ifndef LED_PIN
 #define LED_PIN 4
 #endif

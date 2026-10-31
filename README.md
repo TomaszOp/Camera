@@ -2,7 +2,7 @@
 
 Projekt PlatformIO dla **ESP32-CAM AI Thinker** (OV2640, 4 MB PSRAM). Uruchamia stronę WWW z podglądem MJPEG na żywo, licznikiem FPS i sterowaniem kamerą.
 
-Cały kod kamery i serwera jest w bibliotece wielokrotnego użytku **`lib/EspCamWeb`** (opis API i sposób dodania do innych projektów: [lib/EspCamWeb/README.md](lib/EspCamWeb/README.md)). `src/main.cpp` to tylko krótki przykład, który jawnie tworzy kamerę (`EspCamera`), moduły opcjonalne, WiFi i serwer WWW (`CamWebServer`). Kamera jest centrum: moduły są do niej dołączane, a strona WWW to dodatek, który pokazuje tylko dostępne usługi.
+Cały kod kamery i serwera jest w bibliotece wielokrotnego użytku **`lib/EspCamWeb`** (opis API i sposób dodania do innych projektów: [lib/EspCamWeb/README.md](lib/EspCamWeb/README.md)). `src/main.cpp` to tylko krótki przykład, który jawnie tworzy kamerę (`EspCamera`), moduły opcjonalne, WiFi, serwer WWW (`CamWebServer`) oraz serwery poleceń COM i Telnet. Kamera jest centrum: moduły są do niej dołączane. Strona WWW, COM i Telnet to dodatki na równych prawach, które pokazują tylko dostępne usługi.
 
 - Framework: Arduino core 3.x (platforma [pioarduino](https://github.com/pioarduino/platform-espressif32), ESP-IDF 5.x)
 - Serwer: `esp_http_server` z ESP-IDF, dwie instancje:
@@ -16,6 +16,9 @@ Cały kod kamery i serwera jest w bibliotece wielokrotnego użytku **`lib/EspCam
 | `LED_ON` | 1 | lampa LED błysku (GPIO4) |
 | `SD_ON` | 1 | karta microSD, przycisk „Zapisz zdjęcie na SD”, zdjęcia w `/photos/IMG_00001.jpg`… |
 | `SERVO_MOTORS_ON` | 0 | dwa serwa: poziom `SERVO_PAN_PIN` (12) i pion `SERVO_TILT_PIN` (13) |
+
+| `COM_SERVER_ON` | 1 | polecenia tekstowe przez port szeregowy (`pio device monitor`) |
+| `TELNET_SERVER_ON` | 1 | te same polecenia przez Telnet: `telnet esp32cam.local` (port `TELNET_PORT`, hasło `TELNET_PASSWORD`, domyślnie bez hasła) |
 
 Wyłączony moduł nie jest kompilowany, a strona nie pokazuje jego przycisków. Przycisków nie ma też wtedy, gdy moduł jest włączony, ale nie działa (np. brak karty w slocie).
 
@@ -50,7 +53,7 @@ pio run -t upload
 pio device monitor
 ```
 
-Na monitorze (115200) pojawi się adres IP, a co 5 s liczba klatek na sekundę.
+Na monitorze (115200) pojawi się adres IP i znak zachęty serwera poleceń (`> `). Liczbę klatek pokazują polecenia `cam` i `status`. Przy `COM_SERVER_ON 0` FPS jest wypisywany co 5 s.
 
 ## 3. Otwarcie strony
 
@@ -63,7 +66,21 @@ Na monitorze (115200) pojawi się adres IP, a co 5 s liczba klatek na sekundę.
 
 Na stronie widać dwa liczniki FPS: **przeglądarka** (klatki faktycznie odebrane) i **serwer** (klatki wysłane przez ESP32).
 
-## 4. Wskazówki dotyczące FPS
+## 4. Polecenia przez COM i Telnet
+
+Połącz się przez `pio device monitor` albo `telnet esp32cam.local` i wpisz `help`. Najważniejsze polecenia:
+- `info`, `status`: informacje o płytce i stanie usług,
+- `led on|off|toggle`: lampa,
+- `servo`, `servo pan N`, `servo tilt N`, `servo N M`, `servo left|right|up|down [krok]`, `servo center`: serwa,
+- `photo`: zdjęcie na kartę SD,
+- `sd`, `sd list [N]`: stan karty i ostatnie zdjęcia,
+- `cam`, `cam res vga`, `cam quality 15`: ustawienia obrazu,
+- `wifi`: stan sieci,
+- `restart yes`: restart płytki.
+
+Pełna lista jest w [README biblioteki](lib/EspCamWeb/README.md#serwery-poleceń-com-i-telnet). Polecenia usług wyłączonych w `config.h` są niedostępne. Telnet nie szyfruje połączenia, więc używaj go tylko w zaufanej sieci.
+
+## 5. Wskazówki dotyczące FPS
 
 | Rozdzielczość | Orientacyjnie (dobre WiFi) |
 |---|---|

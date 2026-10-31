@@ -3,6 +3,8 @@
 #if SD_ON
 
 #include <SD_MMC.h>
+#include <algorithm>
+#include <vector>
 
 namespace espcamweb {
 
@@ -58,6 +60,27 @@ String CamSdCard::savePhoto(const uint8_t *data, size_t len) {
   photoCount_++;
   lastPhoto_ = path;
   return lastPhoto_;
+}
+
+uint32_t CamSdCard::listPhotos(Print &out, uint32_t maxCount) const {
+  if (!mounted_ || !maxCount) return 0;
+  struct Entry {
+    unsigned n;
+    size_t size;
+  };
+  std::vector<Entry> photos;
+  File dir = SD_MMC.open(photoDir_);
+  for (File f = dir.openNextFile(); f; f = dir.openNextFile()) {
+    unsigned n;
+    if (!f.isDirectory() && sscanf(f.name(), "IMG_%u.jpg", &n) == 1) photos.push_back({n, f.size()});
+  }
+  std::sort(photos.begin(), photos.end(), [](const Entry &a, const Entry &b) { return a.n > b.n; });
+  uint32_t shown = std::min<uint32_t>(maxCount, photos.size());
+  for (uint32_t i = 0; i < shown; i++) {
+    out.printf("  %s/IMG_%05u.jpg  %u KB\r\n", photoDir_.c_str(), photos[i].n,
+               (unsigned)((photos[i].size + 1023) / 1024));
+  }
+  return shown;
 }
 
 uint64_t CamSdCard::totalBytes() const { return mounted_ ? SD_MMC.totalBytes() : 0; }
