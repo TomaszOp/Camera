@@ -41,6 +41,16 @@ static CamServos servos;  ///< Pan/tilt servos.
 void setup() {
   Serial.begin(115200);
   Serial.println("\nESP32-CAM start");
+  // Hardware report: helps to recognise board variants (e.g. clones with 2 MB PSRAM or none)
+  Serial.printf("CPU: %s rev %d, %d cores, %u MHz\n", ESP.getChipModel(), ESP.getChipRevision(),
+                ESP.getChipCores(), (unsigned)ESP.getCpuFreqMHz());
+  if (psramFound()) {
+    Serial.printf("PSRAM: yes, %u KB\n", (unsigned)(ESP.getPsramSize() / 1024));
+  } else {
+    Serial.println("PSRAM: no");
+  }
+  Serial.printf("Flash: %u MB, %u MHz\n", (unsigned)(ESP.getFlashChipSize() / (1024 * 1024)),
+                (unsigned)(ESP.getFlashChipSpeed() / 1000000));
 
 #if LED_ON
   led.begin(LedSettings());  // LED_PIN, LEDC channel 2
