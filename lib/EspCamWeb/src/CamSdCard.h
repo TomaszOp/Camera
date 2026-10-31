@@ -1,4 +1,7 @@
-// Karta microSD (SD_MMC) do zapisu zdjęć. Pliki: <photoDir>/IMG_00001.jpg, IMG_00002.jpg...
+// Karta microSD do zapisu zdjęć. Pliki: <photoDir>/IMG_00001.jpg, IMG_00002.jpg...
+// Interfejs SDMMC (biblioteka SD_MMC), nie SPI (SD.h). Piny są stałe w ESP32 (slot 1):
+// CLK 14, CMD 15, D0 2 (+ D1 4, D2 12, D3 13 w trybie 4-bit) - nie konfiguruje się ich.
+// Karta FAT32, wkładana przed włączeniem zasilania (wykrywana tylko w begin()).
 // Numeracja zamiast daty (ESP32-CAM nie ma zegara RTC); po starcie szuka najwyższego numeru.
 #pragma once
 

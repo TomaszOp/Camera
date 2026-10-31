@@ -80,7 +80,9 @@ Moduły włącza się w pliku `include/config.h` projektu (1 = włączony, 0 = w
 | D3 | 13 | wolny (serwo tilt) | używany |
 
 Wnioski:
-- Własne gniazdo SD na innej płytce z klasycznym ESP32 musi być podłączone dokładnie do tych pinów, z rezystorami podciągającymi 10 kΩ na CMD i D0–D3. Na ESP32-CAM AI Thinker są one już na płytce.
+- Gniazdo microSD na ESP32-CAM AI Thinker jest podłączone właśnie do tych pinów, razem z rezystorami podciągającymi.
+- Własne gniazdo SD na innej płytce z klasycznym ESP32 musi być podłączone dokładnie do tych pinów, z rezystorami podciągającymi 10 kΩ na CMD i D0–D3. Karta na innych pinach wymagałaby SPI i osobnej klasy opartej na `SD.h`.
+- Karta musi być sformatowana jako **FAT32** i włożona **przed włączeniem zasilania**. `begin()` wykrywa ją tylko przy starcie.
 - Na ESP32-S3 piny SDMMC można wybrać dowolnie (`SD_MMC.setPins()`), ale ta biblioteka obecnie tego nie obsługuje.
 - GPIO2 musi być w stanie niskim lub nieustalonym przy wgrywaniu firmware. Karta włożona w gniazdo czasem to zakłóca. Jeśli wgrywanie się nie udaje, wyjmij kartę na ten czas.
 - **GPIO12 to pin strapping**, który ustala napięcie pamięci flash. Jeśli serwo podciągnie go do stanu wysokiego przy starcie, płytka się nie uruchomi. Wtedy zamień piny serw albo podłącz serwo przez rezystor lub tranzystor. Serwa zasilaj osobno z 5 V, nie z płytki.
