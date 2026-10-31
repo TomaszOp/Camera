@@ -14,7 +14,7 @@ class EspCamera;
  * @brief Parses one text line and executes it on EspCamera.
  *
  * Shared by CamComServer and CamTelnetServer, so both offer identical commands.
- * Depends only on EspCamera. Keywords are English and case-insensitive, replies are Polish.
+ * Depends only on EspCamera. Keywords and replies are English; keywords are case-insensitive.
  * Commands of unavailable services (disabled in EspCamFeatures.h or not working) are hidden
  * in "help" and answer with a "service unavailable" message.
  */

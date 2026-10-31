@@ -44,7 +44,7 @@ bool CamWebServer::begin(const ServerSettings &settings) {
       {"/save", HTTP_GET, saveHandler, this},
   };
   if (httpd_start(&webHttpd_, &config) != ESP_OK) {
-    Serial.printf("Nie udało się uruchomić serwera na porcie %u\n", settings_.httpPort);
+    Serial.printf("Failed to start the web server on port %u\n", settings_.httpPort);
     return false;
   }
   for (const httpd_uri_t &uri : uris) httpd_register_uri_handler(webHttpd_, &uri);
@@ -54,7 +54,7 @@ bool CamWebServer::begin(const ServerSettings &settings) {
   config.ctrl_port += 1;
   const httpd_uri_t streamUri = {"/stream", HTTP_GET, streamHandler, this};
   if (httpd_start(&streamHttpd_, &config) != ESP_OK) {
-    Serial.printf("Nie udało się uruchomić serwera strumienia na porcie %u\n", settings_.streamPort);
+    Serial.printf("Failed to start the stream server on port %u\n", settings_.streamPort);
     end();
     return false;
   }
@@ -94,12 +94,12 @@ esp_err_t CamWebServer::saveHandler(httpd_req_t *req) {
   httpd_resp_set_hdr(req, "Cache-Control", "no-store");
   if (!cam.hasSd()) {
     httpd_resp_set_status(req, "503 Service Unavailable");
-    return httpd_resp_sendstr(req, "{\"ok\":false,\"error\":\"brak karty SD\"}");
+    return httpd_resp_sendstr(req, "{\"ok\":false,\"error\":\"no SD card\"}");
   }
   String path = cam.savePhotoToSd();
   if (!path.length()) {
     httpd_resp_set_status(req, HTTPD_500);
-    return httpd_resp_sendstr(req, "{\"ok\":false,\"error\":\"błąd zapisu\"}");
+    return httpd_resp_sendstr(req, "{\"ok\":false,\"error\":\"write failed\"}");
   }
   char json[96];
   snprintf(json, sizeof(json), "{\"ok\":true,\"file\":\"%s\"}", path.c_str());
@@ -141,7 +141,7 @@ esp_err_t CamWebServer::controlHandler(httpd_req_t *req) {
   if (httpd_req_get_url_query_str(req, query, sizeof(query)) != ESP_OK ||
       httpd_query_key_value(query, "var", var, sizeof(var)) != ESP_OK ||
       httpd_query_key_value(query, "val", val, sizeof(val)) != ESP_OK) {
-    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "brak var/val");
+    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "missing var/val");
     return ESP_FAIL;
   }
 
@@ -168,7 +168,7 @@ esp_err_t CamWebServer::controlHandler(httpd_req_t *req) {
   }
 
   if (!ok) {
-    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "niepoprawna wartość");
+    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "invalid value");
     return ESP_FAIL;
   }
   return httpd_resp_send(req, nullptr, 0);
@@ -183,12 +183,12 @@ esp_err_t CamWebServer::streamHandler(httpd_req_t *req) {
   httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
   httpd_resp_set_hdr(req, "Cache-Control", "no-store");
 
-  Serial.printf("Strumień: klient połączony (%u)\n", (unsigned)++srv->streamClients_);
+  Serial.printf("Stream: client connected (%u)\n", (unsigned)++srv->streamClients_);
 
   while (true) {
     camera_fb_t *fb = cam.capture();
     if (!fb) {
-      Serial.println("Błąd pobrania klatki");
+      Serial.println("Frame capture failed");
       res = ESP_FAIL;
       break;
     }
@@ -200,7 +200,7 @@ esp_err_t CamWebServer::streamHandler(httpd_req_t *req) {
     if (res != ESP_OK) break;
   }
 
-  Serial.printf("Strumień: klient rozłączony (%u)\n", (unsigned)--srv->streamClients_);
+  Serial.printf("Stream: client disconnected (%u)\n", (unsigned)--srv->streamClients_);
   return res;
 }
 

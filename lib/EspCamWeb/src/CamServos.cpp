@@ -19,11 +19,11 @@ bool CamServos::begin(const ServoSettings &settings) {
   ready_ = ledcAttachChannel(s_.panPin, SERVO_FREQ, SERVO_RES_BITS, s_.panChannel) &&
            ledcAttachChannel(s_.tiltPin, SERVO_FREQ, SERVO_RES_BITS, s_.tiltChannel);
   if (!ready_) {
-    Serial.println("Serwa: błąd konfiguracji PWM");
+    Serial.println("Servos: PWM configuration failed");
     return false;
   }
   center();
-  Serial.printf("Serwa: pan GPIO%d, tilt GPIO%d\n", s_.panPin, s_.tiltPin);
+  Serial.printf("Servos: pan GPIO%d, tilt GPIO%d\n", s_.panPin, s_.tiltPin);
   return true;
 }
 

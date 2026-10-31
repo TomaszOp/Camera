@@ -95,8 +95,8 @@ Wnioski:
 ## Serwery poleceń: COM i Telnet
 
 Oba serwery są, tak jak strona WWW, dodatkami korzystającymi wyłącznie z `EspCamera`. Polecenia wykonuje wspólna klasa `CamCommands`, więc na COM i przez Telnet są identyczne.
-- Słowa kluczowe są po angielsku, odpowiedzi po polsku, a wielkość liter nie ma znaczenia.
-- Polecenie usługi niedostępnej (wyłączonej w `EspCamFeatures.h` albo niedziałającej, np. bez karty) zwraca komunikat „Usługa niedostępna”, a `help` go nie pokazuje.
+- Polecenia i odpowiedzi są po angielsku (tak samo strona WWW i logi na Serial), a wielkość liter w poleceniach nie ma znaczenia.
+- Polecenie usługi niedostępnej (wyłączonej w `EspCamFeatures.h` albo niedziałającej, np. bez karty) zwraca komunikat „Service unavailable”, a `help` go nie pokazuje.
 
 | Polecenie | Usługa | Działanie |
 |---|---|---|
@@ -129,19 +129,19 @@ Oba serwery są, tak jak strona WWW, dodatkami korzystającymi wyłącznie z `Es
 ```text
 $ telnet esp32cam.local
 EspCamWeb 1.1.0 - ESP32-CAM
-Wpisz help, aby zobaczyć polecenia, quit - rozłącz.
+Type help for the list of commands, quit to disconnect.
 > led on
-Lampa: wł.
+Lamp: on
 > servo 60 100
-Usługa niedostępna: serwa (wyłączona w EspCamFeatures.h lub nie działa)
+Service unavailable: servos (disabled in EspCamFeatures.h or not working)
 > photo
-Zapisano /photos/IMG_00012.jpg (48 KB)
+Saved /photos/IMG_00012.jpg (48 KB)
 > sd list 3
   /photos/IMG_00012.jpg  48 KB
   /photos/IMG_00011.jpg  47 KB
   /photos/IMG_00010.jpg  51 KB
 > quit
-Do widzenia.
+Goodbye.
 ```
 
 ### Telnet: biblioteka i ograniczenia

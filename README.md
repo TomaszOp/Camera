@@ -16,7 +16,7 @@ Usługi i ich piny ustawia się w jednym pliku: [`lib/EspCamWeb/src/EspCamFeatur
 | Wpis | Domyślnie | Co robi |
 |---|---|---|
 | `LED_ON` | 1 | lampa LED błysku (GPIO4) |
-| `SD_ON` | 1 | karta microSD, przycisk „Zapisz zdjęcie na SD”, zdjęcia w `/photos/IMG_00001.jpg`… |
+| `SD_ON` | 1 | karta microSD, przycisk „Save photo to SD”, zdjęcia w `/photos/IMG_00001.jpg`… |
 | `SERVO_MOTORS_ON` | 0 | dwa serwa: poziom `SERVO_PAN_PIN` (12) i pion `SERVO_TILT_PIN` (13) |
 | `COM_SERVER_ON` | 1 | polecenia tekstowe przez port szeregowy (`pio device monitor`) |
 | `TELNET_SERVER_ON` | 1 | te same polecenia przez Telnet: `telnet esp32cam.local` (port `TELNET_PORT`, hasło `TELNET_PASSWORD`, domyślnie bez hasła) |
@@ -63,7 +63,7 @@ Na monitorze (115200) pojawi się adres IP i znak zachęty serwera poleceń (`> 
 - Sterowanie: `http://<IP>/control?var=<nazwa>&val=<wartość>`, gdzie nazwa to `framesize` (5=QVGA, 8=VGA, 9=SVGA, 10=XGA), `quality` (4–63), `led`, `vflip`, `hmirror` (0/1), `pan`, `tilt` (stopnie), `center`
 - Zdjęcie na kartę SD: `http://<IP>/save`
 
-Na stronie widać dwa liczniki FPS: **przeglądarka** (klatki faktycznie odebrane) i **serwer** (klatki wysłane przez ESP32).
+Strona, polecenia COM/Telnet i logi na Serial są po angielsku. Na stronie widać dwa liczniki FPS: **browser** (klatki faktycznie odebrane przez przeglądarkę) i **server** (klatki wysłane przez ESP32).
 
 ## 4. Polecenia przez COM i Telnet
 

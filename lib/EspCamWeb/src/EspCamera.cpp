@@ -73,14 +73,14 @@ bool EspCamera::begin(const CameraSettings &s) {
 
   esp_err_t err = esp_camera_init(&config);
   if (err != ESP_OK) {
-    Serial.printf("Błąd inicjalizacji kamery: 0x%x (%s)\n", err, esp_err_to_name(err));
+    Serial.printf("Camera init failed: 0x%x (%s)\n", err, esp_err_to_name(err));
     return false;
   }
 
   sensor_t *sensor = esp_camera_sensor_get();
   if (hasPsram_ && s.frameSize != maxFrameSize_) sensor->set_framesize(sensor, s.frameSize);
-  Serial.printf("Kamera OK (PID 0x%x), PSRAM: %s, rozdzielczość: %s\n", sensor->id.PID,
-                hasPsram_ ? "tak" : "nie", frameSizeName(frameSize()));
+  Serial.printf("Camera OK (PID 0x%x), PSRAM: %s, resolution: %s\n", sensor->id.PID,
+                hasPsram_ ? "yes" : "no", frameSizeName(frameSize()));
   return true;
 }
 
@@ -165,7 +165,7 @@ String EspCamera::savePhotoToSd(size_t *bytes) {
   String path = sd_->savePhoto(fb->buf, fb->len);
   if (bytes) *bytes = fb->len;
   release(fb);
-  if (path.length()) Serial.printf("Zapisano zdjęcie: %s\n", path.c_str());
+  if (path.length()) Serial.printf("Photo saved: %s\n", path.c_str());
   return path;
 }
 #else

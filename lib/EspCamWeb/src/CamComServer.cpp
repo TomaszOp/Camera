@@ -12,7 +12,7 @@ static const unsigned MAX_LINE = 128;  ///< Longest accepted command line; extra
 
 void CamComServer::begin(const ComServerSettings &settings) {
   s_ = settings;
-  io_.print("\r\nSerwer poleceń COM gotowy - wpisz help\r\n");
+  io_.print("\r\nCOM command server ready - type help\r\n");
   prompt();
 }
 

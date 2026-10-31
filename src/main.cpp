@@ -49,7 +49,7 @@ void setup() {
 
   CameraSettings cam;  // defaults: AI Thinker pins, VGA, quality 12, 2 buffers sized for XGA
   if (!camera.begin(cam)) {
-    Serial.println("Restart za 5 s...");
+    Serial.println("Restarting in 5 s...");
     delay(5000);
     ESP.restart();
   }
@@ -64,8 +64,8 @@ void setup() {
 #endif
 
   CameraFeatures f = camera.features();
-  Serial.printf("Usługi: LED %s, SD %s, serwa %s\n", f.led ? "tak" : "nie", f.sd ? "tak" : "nie",
-                f.servos ? "tak" : "nie");
+  Serial.printf("Services: LED %s, SD %s, servos %s\n", f.led ? "yes" : "no", f.sd ? "yes" : "no",
+                f.servos ? "yes" : "no");
 
   WifiSettings net;
   net.ssid = WIFI_SSID;
@@ -79,7 +79,7 @@ void setup() {
 #endif
 
   String ip = wifi.ip().toString();
-  Serial.printf("Strona: http://%s/  strumień: http://%s:%u/stream\n", ip.c_str(), ip.c_str(),
+  Serial.printf("Page: http://%s/  stream: http://%s:%u/stream\n", ip.c_str(), ip.c_str(),
                 web.streamPort);
 #if COM_SERVER_ON
   com.begin(ComServerSettings());
@@ -104,7 +104,7 @@ void loop() {
   // Without the COM server: FPS every 5 s on Serial (with it, the cam/status commands show FPS)
   if (!COM_SERVER_ON && now - lastLog >= 5000) {
     uint32_t total = camera.frameCount();
-    Serial.printf("FPS: %.1f, klienci: %u, wolna PSRAM: %u KB\n",
+    Serial.printf("FPS: %.1f, clients: %u, free PSRAM: %u KB\n",
                   (total - lastFrames) * 1000.0f / (now - lastLog), server.streamClients(),
                   ESP.getFreePsram() / 1024);
     lastFrames = total;

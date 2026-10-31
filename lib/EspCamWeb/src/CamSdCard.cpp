@@ -16,13 +16,13 @@ bool CamSdCard::begin(const SdSettings &s) {
   photoDir_ = s.photoDir;
   mounted_ = SD_MMC.begin(s.mountPoint, s.oneBitMode, s.formatIfMountFailed);
   if (!mounted_ || SD_MMC.cardType() == CARD_NONE) {
-    Serial.println("Karta SD: brak karty lub błąd montowania");
+    Serial.println("SD card: no card or mount failed");
     mounted_ = false;
     return false;
   }
 
   if (!SD_MMC.exists(photoDir_) && !SD_MMC.mkdir(photoDir_)) {
-    Serial.printf("Karta SD: nie można utworzyć katalogu %s\n", photoDir_.c_str());
+    Serial.printf("SD card: cannot create directory %s\n", photoDir_.c_str());
     mounted_ = false;
     return false;
   }
@@ -37,7 +37,7 @@ bool CamSdCard::begin(const SdSettings &s) {
     }
   }
 
-  Serial.printf("Karta SD: %llu MB, wolne %llu MB, zdjęć: %u\n", totalBytes() >> 20,
+  Serial.printf("SD card: %llu MB, %llu MB free, photos: %u\n", totalBytes() >> 20,
                 freeBytes() >> 20, (unsigned)photoCount_);
   return true;
 }
@@ -49,13 +49,13 @@ String CamSdCard::savePhoto(const uint8_t *data, size_t len) {
 
   File f = SD_MMC.open(path, FILE_WRITE);
   if (!f) {
-    Serial.printf("Karta SD: nie można otworzyć %s\n", path);
+    Serial.printf("SD card: cannot open %s\n", path);
     return String();
   }
   size_t written = f.write(data, len);
   f.close();
   if (written != len) {
-    Serial.printf("Karta SD: zapisano tylko %u z %u B\n", (unsigned)written, (unsigned)len);
+    Serial.printf("SD card: wrote only %u of %u B\n", (unsigned)written, (unsigned)len);
     SD_MMC.remove(path);
     return String();
   }

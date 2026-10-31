@@ -34,7 +34,7 @@ bool EspCamWeb::begin(const EspCamWebConfig &config) {
 #endif
 
   String ip = wifi_.ip().toString();
-  Serial.printf("Strona: http://%s:%u/  strumień: http://%s:%u/stream\n", ip.c_str(),
+  Serial.printf("Page: http://%s:%u/  stream: http://%s:%u/stream\n", ip.c_str(),
                 config.server.httpPort, ip.c_str(), config.server.streamPort);
   logLastMs_ = millis();
 #if COM_SERVER_ON
@@ -58,7 +58,7 @@ void EspCamWeb::loop() {
   float fps = (total - logFrames_) * 1000.0f / (now - logLastMs_);
   logFrames_ = total;
   logLastMs_ = now;
-  Serial.printf("FPS: %.1f, klienci: %u, wolna PSRAM: %u KB, heap: %u KB\n", fps,
+  Serial.printf("FPS: %.1f, clients: %u, free PSRAM: %u KB, heap: %u KB\n", fps,
                 server_.streamClients(), ESP.getFreePsram() / 1024, ESP.getFreeHeap() / 1024);
 }
 

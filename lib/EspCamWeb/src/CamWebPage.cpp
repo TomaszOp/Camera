@@ -1,13 +1,13 @@
 /**
  * @file CamWebPage.cpp
- * @brief Preview page HTML/CSS/JS stored in flash (PROGMEM). The page text itself is user-facing (Polish).
+ * @brief Preview page HTML/CSS/JS stored in flash (PROGMEM).
  */
 #include "CamWebPage.h"
 
 namespace espcamweb {
 
 const char INDEX_HTML[] PROGMEM = R"rawliteral(<!DOCTYPE html>
-<html lang="pl">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -40,37 +40,37 @@ a{color:var(--accent)}
 <header>
   <h1>ESP32-CAM</h1>
   <div class="stats">
-    <span>przegl.: <b id="fpsB">-</b> kl/s</span>
-    <span>serwer: <b id="fpsS">-</b> kl/s</span>
+    <span>browser: <b id="fpsB">-</b> fps</span>
+    <span>server: <b id="fpsS">-</b> fps</span>
     <span>RSSI: <b id="rssi">-</b></span>
   </div>
 </header>
 <main>
-  <div class="view"><img id="cam" alt="Podgląd kamery"></div>
+  <div class="view"><img id="cam" alt="Camera preview"></div>
   <aside>
     <div>
-      <label class="t">Rozdzielczość</label>
+      <label class="t">Resolution</label>
       <div class="btns" id="fs">
         <button data-v="5">QVGA</button><button data-v="8">VGA</button>
         <button data-v="9">SVGA</button><button data-v="10">XGA</button>
       </div>
     </div>
     <div>
-      <div class="row"><label class="t">Jakość JPEG</label><span id="qv">12</span></div>
+      <div class="row"><label class="t">JPEG quality</label><span id="qv">12</span></div>
       <input type="range" id="q" min="5" max="40" value="12">
-      <div class="foot">mniej = lepsza jakość, większe klatki</div>
+      <div class="foot">lower = better quality, bigger frames</div>
     </div>
     <div>
-      <label class="t">Obraz</label>
+      <label class="t">Image</label>
       <div class="btns">
-        <button id="led" hidden>Lampa</button><button id="vflip">Flip</button><button id="hmirror">Lustro</button>
+        <button id="led" hidden>Lamp</button><button id="vflip">Flip</button><button id="hmirror">Mirror</button>
       </div>
     </div>
     <div id="secServo" hidden>
-      <label class="t">Ruch kamery</label>
-      <div class="row"><span>Poziom</span><span id="panV">-</span></div>
+      <label class="t">Camera movement</label>
+      <div class="row"><span>Pan</span><span id="panV">-</span></div>
       <input type="range" id="pan" min="0" max="180" step="1">
-      <div class="row"><span>Pion</span><span id="tiltV">-</span></div>
+      <div class="row"><span>Tilt</span><span id="tiltV">-</span></div>
       <input type="range" id="tilt" min="0" max="180" step="1">
       <div class="btns">
         <button data-a="pan" data-d="-10">&#9664;</button><button data-a="tilt" data-d="10">&#9650;</button>
@@ -79,12 +79,12 @@ a{color:var(--accent)}
       </div>
     </div>
     <div id="secSd" hidden>
-      <label class="t">Karta SD</label>
-      <div class="btns"><button id="save">Zapisz zdjęcie na SD</button></div>
+      <label class="t">SD card</label>
+      <div class="btns"><button id="save">Save photo to SD</button></div>
       <div class="foot" id="sdInfo"></div>
     </div>
     <div class="foot" id="info"></div>
-    <div class="foot"><a href="/capture" target="_blank">Zdjęcie (JPEG)</a> · <a id="raw" target="_blank">Surowy strumień</a></div>
+    <div class="foot"><a href="/capture" target="_blank">Snapshot (JPEG)</a> · <a id="raw" target="_blank">Raw stream</a></div>
   </aside>
 </main>
 <script>
@@ -94,8 +94,8 @@ let frames = 0;
 
 function ctl(v, val) { return fetch(`/control?var=${v}&val=${val}`).then(refresh); }
 
-// Strumień czytany przez fetch, żeby liczyć klatki w przeglądarce.
-// Gdy fetch/ReadableStream nie działa, fallback na zwykłe <img src>.
+// The stream is read with fetch() so the browser can count frames.
+// If fetch/ReadableStream is not supported, fall back to a plain <img src>.
 async function startStream() {
   const img = $('cam');
   try {
@@ -132,11 +132,11 @@ async function startStream() {
       }
     }
   } catch (e) {
-    console.warn('fetch stream niedostępny, używam <img>', e);
+    console.warn('fetch stream unavailable, using <img>', e);
     img.src = streamUrl;
     return;
   }
-  setTimeout(startStream, 1000);  // strumień zerwany - spróbuj ponownie
+  setTimeout(startStream, 1000);  // stream dropped - retry
 }
 
 let last = performance.now();
@@ -163,12 +163,12 @@ async function refresh() {
     $('led').hidden = !s.features.led;
     $('secSd').hidden = !s.features.sd;
     $('secServo').hidden = !s.features.servos;
-    if (s.features.sd) $('sdInfo').textContent = `zdjęć: ${s.sdPhotos} · wolne: ${s.sdFreeMB} MB` + (s.sdLast ? ` · ostatnie: ${s.sdLast}` : '');
+    if (s.features.sd) $('sdInfo').textContent = `photos: ${s.sdPhotos} · free: ${s.sdFreeMB} MB` + (s.sdLast ? ` · last: ${s.sdLast}` : '');
     if (s.features.servos) {
       pos.pan = s.pan; pos.tilt = s.tilt;
       ['pan', 'tilt'].forEach(k => { $(k + 'V').textContent = s[k] + '°'; if (document.activeElement !== $(k)) $(k).value = s[k]; });
     }
-    $('info').textContent = `${s.width}×${s.height} · ${s.mode} ${s.ip} · PSRAM: ${s.psram ? 'tak' : 'nie'} · klienci: ${s.clients}`;
+    $('info').textContent = `${s.width}×${s.height} · ${s.mode} ${s.ip} · PSRAM: ${s.psram ? 'yes' : 'no'} · clients: ${s.clients}`;
   } catch (e) {}
 }
 
@@ -188,8 +188,8 @@ $('save').onclick = async () => {
   $('save').disabled = true;
   try {
     const r = await (await fetch('/save')).json();
-    $('sdInfo').textContent = r.ok ? `zapisano: ${r.file}` : `błąd: ${r.error}`;
-  } catch (e) { $('sdInfo').textContent = 'błąd zapisu'; }
+    $('sdInfo').textContent = r.ok ? `saved: ${r.file}` : `error: ${r.error}`;
+  } catch (e) { $('sdInfo').textContent = 'save failed'; }
   $('save').disabled = false;
 };
 

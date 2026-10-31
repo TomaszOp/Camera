@@ -17,7 +17,7 @@ bool CamWifi::begin(const WifiSettings &s) {
     WiFi.setSleep(false);  // WiFi power saving heavily reduces FPS
     if (s.hostname) WiFi.setHostname(s.hostname);
     WiFi.begin(s.ssid, s.password);
-    Serial.printf("Łączenie z WiFi \"%s\"", s.ssid);
+    Serial.printf("Connecting to WiFi \"%s\"", s.ssid);
 
     uint32_t start = millis();
     while (WiFi.status() != WL_CONNECTED && millis() - start < s.connectTimeoutMs) {
@@ -28,21 +28,21 @@ bool CamWifi::begin(const WifiSettings &s) {
   }
 
   if (WiFi.status() == WL_CONNECTED) {
-    Serial.printf("Połączono, IP: %s, RSSI: %d dBm\n", WiFi.localIP().toString().c_str(), WiFi.RSSI());
+    Serial.printf("Connected, IP: %s, RSSI: %d dBm\n", WiFi.localIP().toString().c_str(), WiFi.RSSI());
   } else if (s.apFallback) {
-    Serial.println("Brak połączenia - uruchamiam punkt dostępowy");
+    Serial.println("No connection - starting the access point");
     WiFi.disconnect(true);
     WiFi.mode(WIFI_AP);
     WiFi.setSleep(false);
     if (!WiFi.softAP(s.apSsid, s.apPassword)) {
-      Serial.println("Nie udało się uruchomić punktu dostępowego");
+      Serial.println("Failed to start the access point");
       return false;
     }
     ap_ = true;
-    Serial.printf("AP \"%s\" (hasło %s), IP: %s\n", s.apSsid, s.apPassword,
+    Serial.printf("AP \"%s\" (password %s), IP: %s\n", s.apSsid, s.apPassword,
                   WiFi.softAPIP().toString().c_str());
   } else {
-    Serial.println("Brak połączenia WiFi");
+    Serial.println("No WiFi connection");
     return false;
   }
 
