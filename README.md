@@ -26,7 +26,7 @@ Ograniczenia ESP32-CAM:
 - Karta SD korzysta z gniazda microSD na płytce przez sprzętowy interfejs **SDMMC** (biblioteka `SD_MMC`), a nie przez SPI (biblioteka `SD`). **Piny SDMMC są w ESP32 stałe i nie da się ich zmienić:** CLK = GPIO14, CMD = GPIO15, D0 = GPIO2 (oraz D1 = 4, D2 = 12, D3 = 13 w trybie 4-bit). Dlatego nie ma ich w `config.h`. Szczegóły są w [README biblioteki](lib/EspCamWeb/README.md#karta-sd-interfejs-sdmmc-nie-spi).
 - Wolnych pinów jest bardzo mało. Karta SD pracuje w trybie 1-bit (GPIO 2, 14, 15), żeby zostały wolne GPIO4 (lampa) oraz 12 i 13 (serwa).
 - Jeśli wgrywanie firmware się nie udaje, wyjmij kartę SD. Karta na GPIO2 może zakłócać wejście w tryb programowania.
-- **GPIO12 to pin strapping:** przy starcie wybiera napięcie pamięci flash. Typowe serwo tego nie zakłóca. Gdyby płytka nie startowała z podłączonym serwem, dodaj **rezystor 10 kΩ między GPIO12 a GND**. Wymusza on właściwy stan niski przy starcie i nie przeszkadza w sterowaniu serwem.
+- **GPIO12 to pin strapping:** przy starcie wybiera napięcie pamięci flash. Zwykle działa bez zmian: GPIO12 ma wewnętrzny rezystor ściągający, a wejście typowego serwa nie podciąga linii do plusa. Gdyby płytka nie startowała z podłączonym serwem, dodaj **rezystor 10 kΩ między GPIO12 a GND**. Wymusza on właściwy stan niski przy starcie i nie przeszkadza w sterowaniu serwem. Rozwiązanie trwałe, ale **nieodwracalne**: `espefuse.py set_flash_voltage 3.3V`.
 - Serwa zasilaj osobno z 5 V. Pobór prądu przez serwo przy ruchu powoduje restarty („brownout”), jeśli idzie przez płytkę.
 - Kolizje pinów są sprawdzane przy kompilacji (`#error` z opisem).
 

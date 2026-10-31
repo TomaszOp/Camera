@@ -21,9 +21,11 @@
 // ---------- Serwa ----------
 // Karta SD w trybie 1-bit zajmuje GPIO 2, 14, 15, więc dla serw zostają GPIO 12 i 13.
 // UWAGA: GPIO12 to pin strapping - przy starcie wybiera napięcie pamięci flash
-// (stan niski = 3,3 V, prawidłowo). Typowe serwo (SG90, MG90S) tego nie zakłóca, bo jego
-// wejście nie podciąga linii do plusa. Gdyby płytka mimo to nie startowała z podłączonym
-// serwem, dodaj rezystor 10 kΩ między GPIO12 a GND - wymusza stan niski przy starcie
-// i nie przeszkadza w sterowaniu serwem.
+// (stan niski = 3,3 V, prawidłowo). Zwykle działa bez zmian: GPIO12 ma wewnętrzny rezystor
+// ściągający, a wejście typowego serwa (SG90, MG90S) nie podciąga linii do plusa.
+// Gdyby płytka mimo to nie startowała z podłączonym serwem, dodaj rezystor 10 kΩ między
+// GPIO12 a GND - wymusza stan niski przy starcie i nie przeszkadza w sterowaniu serwem.
+// Rozwiązanie trwałe (NIEODWRACALNE): espefuse.py set_flash_voltage 3.3V - napięcie flash
+// zapisane w eFuse, GPIO12 przestaje być pinem strapping.
 #define SERVO_PAN_PIN  12  // poziom
 #define SERVO_TILT_PIN 13  // pion
