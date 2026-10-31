@@ -1,7 +1,7 @@
 // Serwer WWW kamery na esp_http_server (ESP-IDF):
 //  - httpPort:   strona, /control, /status, /capture
 //  - streamPort: /stream (MJPEG) w osobnej instancji httpd, żeby strona nie blokowała strumienia
-// Niezależny od reszty biblioteki: wymaga tylko obiektu EspCamera (i opcjonalnie CamLed).
+// Niezależny od reszty biblioteki: wymaga tylko obiektu EspCamera (lampą steruje przez kamerę).
 #pragma once
 
 #include <atomic>
@@ -11,11 +11,10 @@
 namespace espcamweb {
 
 class EspCamera;
-class CamLed;
 
 class CamWebServer {
  public:
-  explicit CamWebServer(EspCamera &camera, CamLed *led = nullptr) : camera_(camera), led_(led) {}
+  explicit CamWebServer(EspCamera &camera) : camera_(camera) {}
   ~CamWebServer() { end(); }
 
   bool begin(const ServerSettings &settings = ServerSettings());
@@ -31,7 +30,6 @@ class CamWebServer {
   static esp_err_t streamHandler(httpd_req_t *req);
 
   EspCamera &camera_;
-  CamLed *led_;
   ServerSettings settings_;
   httpd_handle_t webHttpd_ = nullptr;
   httpd_handle_t streamHttpd_ = nullptr;

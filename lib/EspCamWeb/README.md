@@ -39,8 +39,8 @@ Każdej klasy można używać samodzielnie. Wszystko jest w przestrzeni nazw `es
 
 | Klasa | Plik | Rola |
 |---|---|---|
-| `EspCamera` | `EspCamera.h` | Sama kamera: inicjalizacja (z trybem awaryjnym bez PSRAM), `capture()`/`release()`, rozdzielczość, jakość, flip, lustro, FPS. Nie potrzebuje WiFi ani serwera. |
-| `CamWebServer` | `CamWebServer.h` | Serwer WWW (esp_http_server). Dostaje referencję do `EspCamera` i opcjonalnie wskaźnik do `CamLed`. |
+| `EspCamera` | `EspCamera.h` | Sama kamera: inicjalizacja (z trybem awaryjnym bez PSRAM), `capture()`/`release()`, rozdzielczość, jakość, flip, lustro, FPS. Opcjonalnie steruje lampą: `attachLed()`, `setLed()`, `ledOn()`, `hasLed()`. Nie potrzebuje WiFi ani serwera. |
+| `CamWebServer` | `CamWebServer.h` | Serwer WWW (esp_http_server). Zależy wyłącznie od `EspCamera`, a lampą steruje przez kamerę. |
 | `CamWifi` | `CamWifi.h` | WiFi STA bez usypiania, mDNS i awaryjny punkt dostępowy. |
 | `CamLed` | `CamLed.h` | Lampa LED przez `ledcAttachChannel` (domyślnie GPIO4, kanał 2, słaba jasność). `pin = -1` wyłącza lampę. |
 | `EspCamWeb` | `EspCamWeb.h` | Opcjonalna fasada, która uruchamia wszystkie powyższe naraz. |
@@ -65,6 +65,9 @@ Konfiguracja jest w `EspCamWebConfig.h`. Każda struktura ma domyślne wartości
 
 Inny moduł kamery: wypełnij własną strukturę `CameraPins` i przypisz ją do `config.camera.pins`.
 
+Zależności: `CamWebServer` → `EspCamera` → `CamLed` (opcjonalnie). `CamWifi` jest niezależny.
+Lampa jest dołączana do kamery przez referencję, a nie tworzona wewnątrz niej. Dzięki temu kamera działa bez lampy, a `CamLed` można też używać samodzielnie.
+
 ## Przykłady
 
 ### Jawne użycie klas
@@ -76,11 +79,12 @@ using namespace espcamweb;
 EspCamera camera;
 CamLed led;
 CamWifi wifi;
-CamWebServer server(camera, &led);   // serwer używa tej samej kamery
+CamWebServer server(camera);   // serwer zależy tylko od kamery
 
 void setup() {
   Serial.begin(115200);
   led.begin(LedSettings());
+  camera.attachLed(led);   // lampa należy do kamery
   if (!camera.begin(CameraSettings())) ESP.restart();
 
   WifiSettings net;

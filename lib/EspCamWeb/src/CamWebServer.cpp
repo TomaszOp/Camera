@@ -3,7 +3,6 @@
 #include <Arduino.h>
 #include <WiFi.h>
 
-#include "CamLed.h"
 #include "CamWebPage.h"
 #include "EspCamera.h"
 
@@ -81,7 +80,6 @@ esp_err_t CamWebServer::statusHandler(httpd_req_t *req) {
   framesize_t fs = cam.frameSize();
   bool ap = WiFi.status() != WL_CONNECTED;
   String ip = ap ? WiFi.softAPIP().toString() : WiFi.localIP().toString();
-  bool ledAvailable = srv->led_ && srv->led_->isAvailable();
 
   char json[400];
   snprintf(json, sizeof(json),
@@ -89,8 +87,7 @@ esp_err_t CamWebServer::statusHandler(httpd_req_t *req) {
            "\"quality\":%d,\"ledAvailable\":%d,\"led\":%d,\"vflip\":%d,\"hmirror\":%d,\"rssi\":%d,"
            "\"psram\":%d,\"clients\":%u,\"streamPort\":%u,\"mode\":\"%s\",\"ip\":\"%s\"}",
            cam.fps(), (int)fs, (int)cam.maxFrameSize(), EspCamera::frameSizeName(fs),
-           resolution[fs].width, resolution[fs].height, cam.quality(), ledAvailable,
-           ledAvailable && srv->led_->isOn(), cam.vflip(), cam.hmirror(), ap ? 0 : (int)WiFi.RSSI(),
+           resolution[fs].width, resolution[fs].height, cam.quality(), cam.hasLed(), cam.ledOn(), cam.vflip(), cam.hmirror(), ap ? 0 : (int)WiFi.RSSI(),
            cam.hasPsram(), (unsigned)srv->streamClients_, srv->settings_.streamPort, ap ? "AP" : "STA",
            ip.c_str());
 
@@ -120,9 +117,8 @@ esp_err_t CamWebServer::controlHandler(httpd_req_t *req) {
     ok = cam.setVFlip(v != 0);
   } else if (!strcmp(var, "hmirror")) {
     ok = cam.setHMirror(v != 0);
-  } else if (!strcmp(var, "led") && srv->led_ && srv->led_->isAvailable()) {
-    srv->led_->set(v != 0);
-    ok = true;
+  } else if (!strcmp(var, "led")) {
+    ok = cam.setLed(v != 0);
   } else {
     ok = false;
   }

@@ -1,9 +1,10 @@
 // Kamera: inicjalizacja, pobieranie klatek, ustawienia obrazu i licznik FPS.
-// Działa samodzielnie, bez serwera WWW.
+// Działa samodzielnie, bez serwera WWW. Opcjonalnie steruje lampą LED (attachLed).
 #pragma once
 
 #include <atomic>
 #include "EspCamWebConfig.h"
+#include "CamLed.h"
 
 namespace espcamweb {
 
@@ -16,6 +17,12 @@ class EspCamera {
 
   bool setFrameSize(framesize_t fs);  // false, gdy przekracza rozmiar buforów
   bool setQuality(int quality);
+  // Lampa LED (opcjonalna): bez attachLed() metody setLed() zwracają false
+  void attachLed(CamLed &led) { led_ = &led; }
+  bool hasLed() const { return led_ && led_->isAvailable(); }
+  bool setLed(bool on);
+  bool ledOn() const { return hasLed() && led_->isOn(); }
+
   bool setVFlip(bool on);
   bool setHMirror(bool on);
 
@@ -37,6 +44,7 @@ class EspCamera {
   static const char *frameSizeName(framesize_t fs);
 
  private:
+  CamLed *led_ = nullptr;
   bool hasPsram_ = false;
   framesize_t maxFrameSize_ = FRAMESIZE_QVGA;
   std::atomic<uint32_t> frames_{0};

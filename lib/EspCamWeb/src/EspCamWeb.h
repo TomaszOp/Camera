@@ -1,7 +1,7 @@
 // EspCamWeb - podgląd kamery ESP32-CAM na żywo przez WWW.
 //
 // Klasy można używać osobno:
-//   EspCamera     - sama kamera (init, capture, ustawienia, FPS)
+//   EspCamera     - sama kamera (init, capture, ustawienia, FPS, opcjonalnie lampa)
 //   CamWebServer  - serwer WWW dla obiektu EspCamera
 //   CamWifi       - WiFi STA + mDNS + awaryjny AP
 //   CamLed        - lampa LED (PWM)
@@ -18,7 +18,7 @@ namespace espcamweb {
 
 class EspCamWeb {
  public:
-  EspCamWeb() : server_(camera_, &led_) {}
+  EspCamWeb() : server_(camera_) { camera_.attachLed(led_); }
 
   // Kamera, lampa, WiFi i serwer. false = błąd (szczegóły na Serial).
   bool begin(const EspCamWebConfig &config);

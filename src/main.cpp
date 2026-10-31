@@ -1,5 +1,5 @@
 // ESP32-CAM AI Thinker - podgląd kamery na żywo przez WWW (biblioteka EspCamWeb).
-// Jawne użycie klas: kamera, lampa i WiFi osobno, serwer WWW dostaje referencję do kamery.
+// Jawne użycie klas: kamera (z lampą), WiFi i serwer WWW, który dostaje referencję do kamery.
 // Krótsza wersja przez fasadę EspCamWeb: lib/EspCamWeb/examples/Basic/main.cpp
 
 #include <Arduino.h>
@@ -12,13 +12,14 @@ using namespace espcamweb;
 static EspCamera camera;
 static CamLed led;
 static CamWifi wifi;
-static CamWebServer server(camera, &led);
+static CamWebServer server(camera);  // lampą steruje przez kamerę
 
 void setup() {
   Serial.begin(115200);
   Serial.println("\nESP32-CAM start");
 
   led.begin(LedSettings());  // GPIO4, kanał LEDC 2
+  camera.attachLed(led);
 
   CameraSettings cam;  // domyślnie: piny AI Thinker, VGA, jakość 12, 2 bufory, bufory na XGA
   if (!camera.begin(cam)) {

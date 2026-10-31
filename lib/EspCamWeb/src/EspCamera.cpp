@@ -79,6 +79,12 @@ bool EspCamera::setQuality(int quality) {
   return s->set_quality(s, constrain(quality, 4, 63)) == 0;
 }
 
+bool EspCamera::setLed(bool on) {
+  if (!hasLed()) return false;
+  led_->set(on);
+  return true;
+}
+
 bool EspCamera::setVFlip(bool on) {
   sensor_t *s = esp_camera_sensor_get();
   return s->set_vflip(s, on ? 1 : 0) == 0;
