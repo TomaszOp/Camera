@@ -63,6 +63,26 @@ Moduły włącza się w pliku `include/config.h` projektu (1 = włączony, 0 = w
 | Serwo pan / tilt | 12 / 13 | kanały 4 i 5 / timer 2 (50 Hz) |
 
 - Karta pracuje w trybie **1-bit**. W trybie 4-bit zajęłaby też GPIO 4, 12 i 13, czyli piny lampy i serw.
+
+### Karta SD: interfejs SDMMC, nie SPI
+
+`CamSdCard` korzysta ze sprzętowego kontrolera **SDMMC** przez bibliotekę `SD_MMC` z core. Nie używa biblioteki `SD` (`SD.h`), która działa przez **SPI**. SDMMC jest szybszy i nie zajmuje magistrali SPI. Tak jest też podłączone gniazdo microSD na płytce ESP32-CAM.
+
+**Piny są stałe i nie da się ich zmienić.** W klasycznym ESP32 slot 1 kontrolera SDMMC jest na stałe połączony z konkretnymi nóżkami. Dlatego piny karty nie występują w `config.h` ani w `SdSettings`. Definiuje je ESP-IDF w pliku `soc/esp32/include/soc/sdmmc_pins.h` (`SDMMC_SLOT1_IOMUX_PIN_NUM_*`), a `SD_MMC.begin()` używa ich automatycznie.
+
+| Sygnał karty | GPIO | Tryb 1-bit (domyślny) | Tryb 4-bit |
+|---|---|---|---|
+| CLK | 14 | używany | używany |
+| CMD | 15 | używany | używany |
+| D0 | 2 | używany | używany |
+| D1 | 4 | wolny (lampa LED) | używany |
+| D2 | 12 | wolny (serwo pan) | używany |
+| D3 | 13 | wolny (serwo tilt) | używany |
+
+Wnioski:
+- Własne gniazdo SD na innej płytce z klasycznym ESP32 musi być podłączone dokładnie do tych pinów, z rezystorami podciągającymi 10 kΩ na CMD i D0–D3. Na ESP32-CAM AI Thinker są one już na płytce.
+- Na ESP32-S3 piny SDMMC można wybrać dowolnie (`SD_MMC.setPins()`), ale ta biblioteka obecnie tego nie obsługuje.
+- GPIO2 musi być w stanie niskim lub nieustalonym przy wgrywaniu firmware. Karta włożona w gniazdo czasem to zakłóca. Jeśli wgrywanie się nie udaje, wyjmij kartę na ten czas.
 - **GPIO12 to pin strapping**, który ustala napięcie pamięci flash. Jeśli serwo podciągnie go do stanu wysokiego przy starcie, płytka się nie uruchomi. Wtedy zamień piny serw albo podłącz serwo przez rezystor lub tranzystor. Serwa zasilaj osobno z 5 V, nie z płytki.
 - Do serw nie używam biblioteki ESP32Servo, bo sama przydziela timery LEDC i koliduje z kamerą.
 ## Klasy

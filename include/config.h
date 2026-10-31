@@ -6,6 +6,7 @@
 // ---------- Moduły ----------
 #define LED_ON          1  // lampa LED błysku
 #define SD_ON           1  // karta microSD do zapisu zdjęć (gniazdo na płytce, SD_MMC, tryb 1-bit)
+                           // piny SDMMC są stałe w ESP32: CLK 14, CMD 15, D0 2 - nie konfiguruje się ich
 #define SERVO_MOTORS_ON 0  // dwa serwa: poziom (pan) i pion (tilt)
 
 // ---------- Lampa LED ----------
