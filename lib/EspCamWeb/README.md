@@ -33,20 +33,18 @@ lib_deps =
 build_flags =
     -DBOARD_HAS_PSRAM
     -mfix-esp32-psram-cache-issue
-    -Iinclude                              ; potrzebne, jeśli projekt ma include/config.h
 ```
 
-## Moduły opcjonalne: `config.h`
+## Moduły opcjonalne: `EspCamFeatures.h`
 
-Moduły włącza się w pliku `include/config.h` projektu (1 = włączony, 0 = wyłączony). Kod wyłączonego modułu w ogóle nie jest kompilowany.
+Usługi i ich piny ustawia się w jednym pliku biblioteki: `src/EspCamFeatures.h` (1 = włączona, 0 = wyłączona). Kod wyłączonej usługi w ogóle nie jest kompilowany. Ten sam plik czytają biblioteka i program, więc ustawienia są zawsze zgodne.
 
 ```cpp
-#pragma once
 #define LED_ON          1   // lampa LED błysku          (CamLed)
-#define SD_ON           0   // karta microSD na zdjęcia  (CamSdCard)
+#define SD_ON           1   // karta microSD na zdjęcia  (CamSdCard)
 #define SERVO_MOTORS_ON 0   // serwa poziom/pion         (CamServos)
-#define COM_SERVER_ON    0  // polecenia przez port szeregowy (CamComServer)
-#define TELNET_SERVER_ON 0  // polecenia przez Telnet         (CamTelnetServer)
+#define COM_SERVER_ON    1  // polecenia przez port szeregowy (CamComServer)
+#define TELNET_SERVER_ON 1  // polecenia przez Telnet         (CamTelnetServer)
 #define TELNET_PORT      23
 #define TELNET_PASSWORD  "" // "" = bez hasła
 
@@ -55,8 +53,7 @@ Moduły włącza się w pliku `include/config.h` projektu (1 = włączony, 0 = w
 #define SERVO_TILT_PIN 13
 ```
 
-- Bez `config.h` obowiązują wartości domyślne: LED włączony, a SD, serwa oraz serwery COM i Telnet wyłączone.
-- **Ważne:** PlatformIO nie przekazuje katalogu `include/` projektu do bibliotek z `lib/`. Dlatego w `build_flags` musi być `-Iinclude`. Inaczej biblioteka i program zbudowałyby się z różnymi ustawieniami. Taką niezgodność wykrywa linker i zgłasza błąd w rodzaju `undefined reference to 'espcamweb_config_led1_sd1_servo0'`.
+- Biblioteka dołączona przez `symlink://` lub `lib_extra_dirs` jest wspólna dla wszystkich projektów, które z niej korzystają, więc zmiana w `EspCamFeatures.h` dotyczy ich wszystkich. Jeśli projekt potrzebuje innego zestawu usług, skopiuj bibliotekę do jego `lib/`.
 - `EspCamFeatures.h` sprawdza przy kompilacji kolizje pinów: z kamerą, z kartą SD, LED z serwem, pan z tilt oraz piny 34–39, które są tylko wejściami. Kolizja daje błąd `#error` z opisem.
 
 ### Przydział pinów i kanałów LEDC (AI Thinker)
@@ -74,7 +71,7 @@ Moduły włącza się w pliku `include/config.h` projektu (1 = włączony, 0 = w
 
 `CamSdCard` korzysta ze sprzętowego kontrolera **SDMMC** przez bibliotekę `SD_MMC` z core. Nie używa biblioteki `SD` (`SD.h`), która działa przez **SPI**. SDMMC jest szybszy i nie zajmuje magistrali SPI. Tak jest też podłączone gniazdo microSD na płytce ESP32-CAM.
 
-**Piny są stałe i nie da się ich zmienić.** W klasycznym ESP32 slot 1 kontrolera SDMMC jest na stałe połączony z konkretnymi nóżkami. Dlatego piny karty nie występują w `config.h` ani w `SdSettings`. Definiuje je ESP-IDF w pliku `soc/esp32/include/soc/sdmmc_pins.h` (`SDMMC_SLOT1_IOMUX_PIN_NUM_*`), a `SD_MMC.begin()` używa ich automatycznie.
+**Piny są stałe i nie da się ich zmienić.** W klasycznym ESP32 slot 1 kontrolera SDMMC jest na stałe połączony z konkretnymi nóżkami. Dlatego piny karty nie występują w `EspCamFeatures.h` ani w `SdSettings`. Definiuje je ESP-IDF w pliku `soc/esp32/include/soc/sdmmc_pins.h` (`SDMMC_SLOT1_IOMUX_PIN_NUM_*`), a `SD_MMC.begin()` używa ich automatycznie.
 
 | Sygnał karty | GPIO | Tryb 1-bit (domyślny) | Tryb 4-bit |
 |---|---|---|---|
@@ -99,7 +96,7 @@ Wnioski:
 
 Oba serwery są, tak jak strona WWW, dodatkami korzystającymi wyłącznie z `EspCamera`. Polecenia wykonuje wspólna klasa `CamCommands`, więc na COM i przez Telnet są identyczne.
 - Słowa kluczowe są po angielsku, odpowiedzi po polsku, a wielkość liter nie ma znaczenia.
-- Polecenie usługi niedostępnej (wyłączonej w `config.h` albo niedziałającej, np. bez karty) zwraca komunikat „Usługa niedostępna”, a `help` go nie pokazuje.
+- Polecenie usługi niedostępnej (wyłączonej w `EspCamFeatures.h` albo niedziałającej, np. bez karty) zwraca komunikat „Usługa niedostępna”, a `help` go nie pokazuje.
 
 | Polecenie | Usługa | Działanie |
 |---|---|---|
@@ -136,7 +133,7 @@ Wpisz help, aby zobaczyć polecenia, quit - rozłącz.
 > led on
 Lampa: wł.
 > servo 60 100
-Usługa niedostępna: serwa (wyłączona w config.h lub nie działa)
+Usługa niedostępna: serwa (wyłączona w EspCamFeatures.h lub nie działa)
 > photo
 Zapisano /photos/IMG_00012.jpg (48 KB)
 > sd list 3
@@ -196,7 +193,7 @@ Konfiguracja jest w `EspCamWebConfig.h`. Każda struktura ma domyślne wartości
   - `oneBitMode`: `true`
   - `formatIfMountFailed`: `false`
 - **`ServoSettings`**:
-  - `panPin`, `tiltPin`: z `config.h`
+  - `panPin`, `tiltPin`: z `EspCamFeatures.h`
   - `panChannel` 4, `tiltChannel` 5
   - `minPulseUs` 500, `maxPulseUs` 2400
   - zakresy `panMin`/`panMax`, `tiltMin`/`tiltMax`
@@ -216,7 +213,7 @@ Moduły dołącza się do kamery przez referencję, a nie tworzy wewnątrz niej.
 
 | Usługa | Dołączenie | Metody |
 |---|---|---|
-| wszystkie | – | `features()` zwraca `{led, sd, servos}`: włączone w `config.h` **i** poprawnie uruchomione (np. karta włożona) |
+| wszystkie | – | `features()` zwraca `{led, sd, servos}`: włączone w `EspCamFeatures.h` **i** poprawnie uruchomione (np. karta włożona) |
 | lampa | `attachLed(CamLed&)` | `hasLed()`, `setLed(bool)`, `ledOn()` |
 | karta SD | `attachSd(CamSdCard&)` | `hasSd()`, `savePhotoToSd(&bajty)` (zwraca ścieżkę pliku), `sdPhotoCount()`, `sdFreeBytes()`, `sdLastPhoto()`, `sdListPhotos(Print&, N)` |
 | serwa | `attachServos(CamServos&)` | `hasServos()`, `setPan(deg)`, `setTilt(deg)`, `centerServos()`, `pan()`, `tilt()`, `servoLimits(...)` |
@@ -275,7 +272,7 @@ camera.setPan(45);                    // gdy dołączone serwa (SERVO_MOTORS_ON)
 
 ### Fasada
 
-Zobacz `examples/Basic/main.cpp`: konfiguracja, `cam.begin(config)` w `setup()` i `cam.loop()` w `loop()`. Fasada sama tworzy i dołącza moduły włączone w `config.h`. Brak karty SD nie jest błędem: usługa po prostu nie jest dostępna.
+Zobacz `examples/Basic/main.cpp`: konfiguracja, `cam.begin(config)` w `setup()` i `cam.loop()` w `loop()`. Fasada sama tworzy i dołącza moduły włączone w `EspCamFeatures.h`. Brak karty SD nie jest błędem: usługa po prostu nie jest dostępna.
 
 ## Adresy HTTP
 

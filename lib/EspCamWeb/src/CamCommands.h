@@ -1,7 +1,7 @@
 // Interpreter poleceń tekstowych dla kamery - wspólny dla serwera COM i Telnet,
 // dzięki czemu oba mają identyczne polecenia. Zależy wyłącznie od EspCamera.
 // Polecenia po angielsku, odpowiedzi po polsku, wielkość liter bez znaczenia.
-// Polecenia usług niedostępnych (wyłączonych w config.h lub niedziałających) są
+// Polecenia usług niedostępnych (wyłączonych w EspCamFeatures.h lub niedziałających) są
 // ukryte w "help" i zwracają komunikat o braku usługi.
 #pragma once
 

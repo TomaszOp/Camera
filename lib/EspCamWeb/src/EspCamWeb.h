@@ -10,7 +10,7 @@
 //   CamComServer  - polecenia przez port szeregowy (dodatek) [COM_SERVER_ON]
 //   CamTelnetServer - polecenia przez Telnet (dodatek)     [TELNET_SERVER_ON]
 //   CamCommands   - wspólny interpreter poleceń COM/Telnet
-// albo razem przez opcjonalną fasadę EspCamWeb. Moduły włącza się w config.h projektu.
+// albo razem przez opcjonalną fasadę EspCamWeb. Moduły włącza się w EspCamFeatures.h.
 #pragma once
 
 #include "CamComServer.h"

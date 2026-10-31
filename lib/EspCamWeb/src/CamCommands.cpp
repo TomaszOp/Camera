@@ -10,7 +10,7 @@ static const int MAX_ARGS = 4;
 static const int SERVO_STEP = 10;  // domyślny krok dla servo left/right/up/down
 
 static void unavailable(Print &out, const char *service) {
-  out.printf("Usługa niedostępna: %s (wyłączona w config.h lub nie działa)\r\n", service);
+  out.printf("Usługa niedostępna: %s (wyłączona w EspCamFeatures.h lub nie działa)\r\n", service);
 }
 
 static const char *onOff(bool v) { return v ? "wł." : "wył."; }

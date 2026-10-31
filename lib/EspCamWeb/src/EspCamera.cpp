@@ -15,8 +15,6 @@ class EspCameraLock {
 
 #define ECW_LOCK EspCameraLock lock(*this)
 
-extern "C" const int ECW_CONFIG_SYMBOL = 1;  // patrz EspCamFeatures.h
-
 namespace espcamweb {
 
 bool EspCamera::begin(const CameraSettings &s) {

@@ -1,56 +1,36 @@
-// Wybór opcjonalnych modułów. Wartości bierze z config.h projektu (jeśli jest),
-// pozostałe dostają domyślne. Wyłączony moduł nie jest kompilowany.
+// Konfiguracja biblioteki EspCamWeb: usługi opcjonalne i ich piny.
+// 1 = usługa włączona, 0 = wyłączona (jej kod w ogóle nie jest kompilowany).
+// To jedyne miejsce konfiguracji - czytają je zarówno biblioteka, jak i program.
 #pragma once
-
-#if __has_include("config.h")
-#include "config.h"
-#endif
-
-#ifndef LED_ON
-#define LED_ON 1
-#endif
-#ifndef SD_ON
-#define SD_ON 0
-#endif
-#ifndef SERVO_MOTORS_ON
-#define SERVO_MOTORS_ON 0
-#endif
-
-#ifndef COM_SERVER_ON
-#define COM_SERVER_ON 0
-#endif
-#ifndef TELNET_SERVER_ON
-#define TELNET_SERVER_ON 0
-#endif
-#ifndef TELNET_PORT
-#define TELNET_PORT 23
-#endif
-#ifndef TELNET_PASSWORD
-#define TELNET_PASSWORD ""  // pusty = bez hasła
-#endif
 
 #define ESPCAMWEB_VERSION "1.1.0"
 
-#ifndef LED_PIN
-#define LED_PIN 4
-#endif
-#ifndef SERVO_PAN_PIN
-#define SERVO_PAN_PIN 12
-#endif
-#ifndef SERVO_TILT_PIN
-#define SERVO_TILT_PIN 13
-#endif
+// ---------- Moduły ----------
+#define LED_ON          1  // lampa LED błysku
+#define SD_ON           1  // karta microSD do zapisu zdjęć (gniazdo na płytce, SD_MMC, tryb 1-bit)
+                           // piny SDMMC są stałe w ESP32: CLK 14, CMD 15, D0 2 - nie konfiguruje się ich
+#define SERVO_MOTORS_ON 0  // dwa serwa: poziom (pan) i pion (tilt)
 
-// ---------- Zgodność konfiguracji ----------
-// Biblioteka i program muszą widzieć ten sam config.h (inaczej klasy miałyby różny układ).
-// Biblioteka definiuje symbol z nazwą zależną od konfiguracji, a konstruktor EspCamera
-// (rozwijany w programie) się do niego odwołuje. Przy niezgodności linker zgłosi np.:
-//   undefined reference to `espcamweb_config_led1_sd1_servo0'
-// Rozwiązanie: build_flags = -Iinclude w platformio.ini.
-#define ECW_CFG_CAT(l, s, v) espcamweb_config_led##l##_sd##s##_servo##v
-#define ECW_CFG_SYM(l, s, v) ECW_CFG_CAT(l, s, v)
-#define ECW_CONFIG_SYMBOL ECW_CFG_SYM(LED_ON, SD_ON, SERVO_MOTORS_ON)
-extern "C" const int ECW_CONFIG_SYMBOL;
+// ---------- Serwery poleceń (te same polecenia: help, info, led, servo, photo...) ----------
+#define COM_SERVER_ON    1  // polecenia przez port szeregowy (pio device monitor)
+#define TELNET_SERVER_ON 1  // polecenia przez Telnet: telnet esp32cam.local
+#define TELNET_PORT      23
+#define TELNET_PASSWORD  ""  // "" = bez hasła; telnet NIE szyfruje - tylko zaufana sieć
+
+// ---------- Lampa LED ----------
+#define LED_PIN 4  // dioda błysku na ESP32-CAM AI Thinker
+
+// ---------- Serwa ----------
+// Karta SD w trybie 1-bit zajmuje GPIO 2, 14, 15, więc dla serw zostają GPIO 12 i 13.
+// UWAGA: GPIO12 to pin strapping - przy starcie wybiera napięcie pamięci flash
+// (stan niski = 3,3 V, prawidłowo). Zwykle działa bez zmian: GPIO12 ma wewnętrzny rezystor
+// ściągający, a wejście typowego serwa (SG90, MG90S) nie podciąga linii do plusa.
+// Gdyby płytka mimo to nie startowała z podłączonym serwem, dodaj rezystor 10 kΩ między
+// GPIO12 a GND - wymusza stan niski przy starcie i nie przeszkadza w sterowaniu serwem.
+// Rozwiązanie trwałe (NIEODWRACALNE): espefuse.py set_flash_voltage 3.3V - napięcie flash
+// zapisane w eFuse, GPIO12 przestaje być pinem strapping.
+#define SERVO_PAN_PIN  12  // poziom
+#define SERVO_TILT_PIN 13  // pion
 
 // ---------- Sprawdzenie kolizji pinów ----------
 // Kamera AI Thinker: 0, 5, 18, 19, 21, 22, 23, 25, 26, 27, 32, 34, 35, 36, 39; PSRAM: 16, 17

@@ -9,28 +9,27 @@ Cały kod kamery i serwera jest w bibliotece wielokrotnego użytku **`lib/EspCam
   - port **80** – strona, `/control`, `/status`, `/capture`, `/save`
   - port **81** – `/stream` (MJPEG), osobno, żeby strona nie blokowała strumienia
 
-## 0. Moduły opcjonalne: `include/config.h`
+## 0. Moduły opcjonalne: `EspCamFeatures.h`
+
+Usługi i ich piny ustawia się w jednym pliku: [`lib/EspCamWeb/src/EspCamFeatures.h`](lib/EspCamWeb/src/EspCamFeatures.h). Czytają go zarówno biblioteka, jak i program.
 
 | Wpis | Domyślnie | Co robi |
 |---|---|---|
 | `LED_ON` | 1 | lampa LED błysku (GPIO4) |
 | `SD_ON` | 1 | karta microSD, przycisk „Zapisz zdjęcie na SD”, zdjęcia w `/photos/IMG_00001.jpg`… |
 | `SERVO_MOTORS_ON` | 0 | dwa serwa: poziom `SERVO_PAN_PIN` (12) i pion `SERVO_TILT_PIN` (13) |
-
 | `COM_SERVER_ON` | 1 | polecenia tekstowe przez port szeregowy (`pio device monitor`) |
 | `TELNET_SERVER_ON` | 1 | te same polecenia przez Telnet: `telnet esp32cam.local` (port `TELNET_PORT`, hasło `TELNET_PASSWORD`, domyślnie bez hasła) |
 
 Wyłączony moduł nie jest kompilowany, a strona nie pokazuje jego przycisków. Przycisków nie ma też wtedy, gdy moduł jest włączony, ale nie działa (np. brak karty w slocie).
 
 Ograniczenia ESP32-CAM:
-- Karta SD korzysta z gniazda microSD na płytce przez sprzętowy interfejs **SDMMC** (biblioteka `SD_MMC`), a nie przez SPI (biblioteka `SD`). **Piny SDMMC są w ESP32 stałe i nie da się ich zmienić:** CLK = GPIO14, CMD = GPIO15, D0 = GPIO2 (oraz D1 = 4, D2 = 12, D3 = 13 w trybie 4-bit). Dlatego nie ma ich w `config.h`. Szczegóły są w [README biblioteki](lib/EspCamWeb/README.md#karta-sd-interfejs-sdmmc-nie-spi).
+- Karta SD korzysta z gniazda microSD na płytce przez sprzętowy interfejs **SDMMC** (biblioteka `SD_MMC`), a nie przez SPI (biblioteka `SD`). **Piny SDMMC są w ESP32 stałe i nie da się ich zmienić:** CLK = GPIO14, CMD = GPIO15, D0 = GPIO2 (oraz D1 = 4, D2 = 12, D3 = 13 w trybie 4-bit). Dlatego nie ma ich w `EspCamFeatures.h`. Szczegóły są w [README biblioteki](lib/EspCamWeb/README.md#karta-sd-interfejs-sdmmc-nie-spi).
 - Wolnych pinów jest bardzo mało. Karta SD pracuje w trybie 1-bit (GPIO 2, 14, 15), żeby zostały wolne GPIO4 (lampa) oraz 12 i 13 (serwa).
 - Jeśli wgrywanie firmware się nie udaje, wyjmij kartę SD. Karta na GPIO2 może zakłócać wejście w tryb programowania.
 - **GPIO12 to pin strapping:** przy starcie wybiera napięcie pamięci flash. Zwykle działa bez zmian: GPIO12 ma wewnętrzny rezystor ściągający, a wejście typowego serwa nie podciąga linii do plusa. Gdyby płytka nie startowała z podłączonym serwem, dodaj **rezystor 10 kΩ między GPIO12 a GND**. Wymusza on właściwy stan niski przy starcie i nie przeszkadza w sterowaniu serwem. Rozwiązanie trwałe, ale **nieodwracalne**: `espefuse.py set_flash_voltage 3.3V`.
 - Serwa zasilaj osobno z 5 V. Pobór prądu przez serwo przy ruchu powoduje restarty („brownout”), jeśli idzie przez płytkę.
 - Kolizje pinów są sprawdzane przy kompilacji (`#error` z opisem).
-
-`platformio.ini` zawiera `-Iinclude`. Bez tego biblioteka w `lib/` nie widzi `config.h`.
 
 ## 1. Ustawienie WiFi
 
@@ -78,7 +77,7 @@ Połącz się przez `pio device monitor` albo `telnet esp32cam.local` i wpisz `h
 - `wifi`: stan sieci,
 - `restart yes`: restart płytki.
 
-Pełna lista jest w [README biblioteki](lib/EspCamWeb/README.md#serwery-poleceń-com-i-telnet). Polecenia usług wyłączonych w `config.h` są niedostępne. Telnet nie szyfruje połączenia, więc używaj go tylko w zaufanej sieci.
+Pełna lista jest w [README biblioteki](lib/EspCamWeb/README.md#serwery-poleceń-com-i-telnet). Polecenia usług wyłączonych w `EspCamFeatures.h` są niedostępne. Telnet nie szyfruje połączenia, więc używaj go tylko w zaufanej sieci.
 
 ## 5. Wskazówki dotyczące FPS
 

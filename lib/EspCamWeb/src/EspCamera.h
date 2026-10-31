@@ -1,5 +1,5 @@
 // Kamera - centrum biblioteki: inicjalizacja, pobieranie klatek, ustawienia obrazu, FPS
-// oraz opcjonalne usługi: lampa LED, karta SD, serwa pan/tilt (włączane w config.h).
+// oraz opcjonalne usługi: lampa LED, karta SD, serwa pan/tilt (włączane w EspCamFeatures.h).
 // Działa samodzielnie, bez serwera WWW. Metody wyłączonych usług istnieją zawsze i zwracają false.
 // Bezpieczna wątkowo: metody zmieniające stan są chronione muteksem (wołają je zadania httpd,
 // loop() z serwerami COM/Telnet itd.).
@@ -16,7 +16,7 @@
 
 namespace espcamweb {
 
-// Dostępne usługi: włączone w config.h i poprawnie zainicjalizowane
+// Dostępne usługi: włączone w EspCamFeatures.h i poprawnie zainicjalizowane
 struct CameraFeatures {
   bool led;
   bool sd;
@@ -25,8 +25,7 @@ struct CameraFeatures {
 
 class EspCamera {
  public:
-  // Odwołanie do symbolu konfiguracji - wykrywa niezgodny config.h (patrz EspCamFeatures.h)
-  EspCamera() : mutex_(xSemaphoreCreateRecursiveMutex()) { asm volatile("" ::"r"(&ECW_CONFIG_SYMBOL)); }
+  EspCamera() : mutex_(xSemaphoreCreateRecursiveMutex()) {}
   EspCamera(const EspCamera &) = delete;
   EspCamera &operator=(const EspCamera &) = delete;
 

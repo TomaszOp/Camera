@@ -1,7 +1,7 @@
 // ESP32-CAM AI Thinker - podgląd kamery na żywo przez WWW (biblioteka EspCamWeb).
 // EspCamera jest centrum: lampa, karta SD i serwa są do niej dołączane, a serwer WWW
 // dostaje tylko referencję do kamery. Serwery poleceń COM i Telnet są, tak jak strona WWW,
-// dodatkami korzystającymi z kamery. Moduły i serwery włącza się w include/config.h.
+// dodatkami korzystającymi z kamery. Moduły i serwery włącza się w lib/EspCamWeb/src/EspCamFeatures.h.
 // Krótsza wersja przez fasadę EspCamWeb: lib/EspCamWeb/examples/Basic/main.cpp
 
 #include <Arduino.h>
