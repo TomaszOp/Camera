@@ -16,6 +16,7 @@
 #include "CamLed.h"
 #include "CamSdCard.h"
 #include "CamServos.h"
+#include "NvsSettings.h"
 
 namespace espcamweb {
 
@@ -24,6 +25,16 @@ struct CameraFeatures {
   bool led;     ///< LED lamp attached and working.
   bool sd;      ///< SD card attached and mounted.
   bool servos;  ///< Servos attached and configured.
+  bool settings;  ///< WiFi settings store (NVS) attached.
+};
+
+/// Saved WiFi settings as exposed to front-ends - deliberately without the password.
+struct WifiSettingsInfo {
+  bool saved = false;                 ///< Settings are saved in NVS.
+  WifiRole role = WifiRole::Station;  ///< Saved role.
+  String ssid;                        ///< Saved SSID.
+  bool hasPassword = false;           ///< A password is saved (its value is never exposed).
+  WifiStartInfo start;                ///< How the network was started (saved/default, fallback).
 };
 
 /**
@@ -119,7 +130,7 @@ class EspCamera {
   float fps() const { return fps_; }
 
   /// @return Which optional services are available right now.
-  CameraFeatures features() const { return {hasLed(), hasSd(), hasServos()}; }
+  CameraFeatures features() const { return {hasLed(), hasSd(), hasServos(), hasWifiSettings()}; }
 
   // ---------- LED lamp (LED_ON) ----------
 #if LED_ON
@@ -209,6 +220,36 @@ class EspCamera {
    */
   bool servoLimits(int &panMin, int &panMax, int &tiltMin, int &tiltMax) const;
 
+  // ---------- WiFi settings (WIFI_SETTINGS_ON) ----------
+#if WIFI_SETTINGS_ON
+  /**
+   * @brief Attaches the NVS WiFi settings store. The object must outlive the camera.
+   * @param settings NvsSettings after begin().
+   */
+  void attachSettings(NvsSettings &settings) { settings_ = &settings; }
+#endif
+  /// @return true if a WiFi settings store is attached.
+  bool hasWifiSettings() const;
+  /**
+   * @brief Reads the saved WiFi settings and start-up information (never the password).
+   * @param[out] info Filled in; info.saved = false when nothing is saved.
+   * @return false if no settings store is attached.
+   */
+  bool wifiSettings(WifiSettingsInfo &info) const;
+  /**
+   * @brief Validates and saves new WiFi settings; they take effect after a restart.
+   * @param role     Station or access point.
+   * @param ssid     1-32 bytes.
+   * @param password Empty (open network) or 8-63 characters.
+   * @return nullptr on success, otherwise an English error message.
+   */
+  const char *saveWifiSettings(WifiRole role, const String &ssid, const String &password);
+  /**
+   * @brief Erases the saved WiFi settings; the code defaults apply after a restart.
+   * @return true on success.
+   */
+  bool clearWifiSettings();
+
   /**
    * @brief Human-readable name of a frame size.
    * @param fs Frame size.
@@ -225,6 +266,9 @@ class EspCamera {
 #endif
 #if SERVO_MOTORS_ON
   CamServos *servos_ = nullptr;  ///< Attached servos or nullptr.
+#endif
+#if WIFI_SETTINGS_ON
+  NvsSettings *settings_ = nullptr;  ///< Attached WiFi settings or nullptr.
 #endif
   bool hasPsram_ = false;                      ///< PSRAM found in begin().
   framesize_t maxFrameSize_ = FRAMESIZE_QVGA;  ///< Size the buffers were allocated for.

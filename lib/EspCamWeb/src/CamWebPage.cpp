@@ -85,6 +85,7 @@ a{color:var(--accent)}
     </div>
     <div class="foot" id="info"></div>
     <div class="foot"><a href="/capture" target="_blank">Snapshot (JPEG)</a> · <a id="raw" target="_blank">Raw stream</a></div>
+    <div class="foot" id="wifiLink" hidden><a href="/wifi">WiFi settings</a></div>
   </aside>
 </main>
 <script>
@@ -163,6 +164,7 @@ async function refresh() {
     $('led').hidden = !s.features.led;
     $('secSd').hidden = !s.features.sd;
     $('secServo').hidden = !s.features.servos;
+    $('wifiLink').hidden = !s.features.settings;
     if (s.features.sd) $('sdInfo').textContent = `photos: ${s.sdPhotos} · free: ${s.sdFreeMB} MB` + (s.sdLast ? ` · last: ${s.sdLast}` : '');
     if (s.features.servos) {
       pos.pan = s.pan; pos.tilt = s.tilt;
@@ -201,5 +203,139 @@ setInterval(refresh, 1000);
 )rawliteral";
 
 const size_t INDEX_HTML_LEN = sizeof(INDEX_HTML) - 1;
+
+#if WIFI_SETTINGS_ON
+const char WIFI_HTML[] PROGMEM = R"rawliteral(<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ESP32-CAM WiFi</title>
+<style>
+:root{--bg:#111418;--panel:#1b2027;--line:#2b323c;--text:#e6e9ee;--muted:#8b95a3;--accent:#3b82f6;--ok:#22c55e;--err:#ef4444}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+header{display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-bottom:1px solid var(--line)}
+h1{font-size:18px;margin:0}
+main{display:flex;flex-direction:column;gap:16px;padding:16px;max-width:560px;margin:0 auto}
+section{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px;display:flex;flex-direction:column;gap:10px}
+label.t{display:block;color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-variant-numeric:tabular-nums}
+.kv span:nth-child(odd){color:var(--muted)}
+.btns{display:flex;flex-wrap:wrap;gap:6px}
+button{flex:1;background:#232a33;color:var(--text);border:1px solid var(--line);border-radius:6px;padding:8px 10px;font:inherit;cursor:pointer}
+button.on,button.primary{background:var(--accent);border-color:var(--accent)}
+button.danger{border-color:var(--err);color:var(--err)}
+input[type=text],input[type=password]{width:100%;background:#0d1014;color:var(--text);border:1px solid var(--line);border-radius:6px;padding:8px 10px;font:inherit}
+.check{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px}
+a{color:var(--accent)}
+.foot{color:var(--muted);font-size:12px}
+#msg.ok{color:var(--ok)}#msg.err{color:var(--err)}
+</style>
+</head>
+<body>
+<header><h1>WiFi settings</h1><a href="/">&larr; Camera</a></header>
+<main>
+  <section>
+    <label class="t">Current network</label>
+    <div class="kv" id="cur"></div>
+  </section>
+  <section>
+    <label class="t">Saved settings</label>
+    <div class="kv" id="saved"></div>
+  </section>
+  <section>
+    <label class="t">Change settings</label>
+    <div class="btns">
+      <button id="mSta" class="on" type="button">Join a network (STA)</button>
+      <button id="mAp" type="button">Own access point (AP)</button>
+    </div>
+    <div><label class="t" for="ssid">SSID</label><input type="text" id="ssid" maxlength="32" autocomplete="off"></div>
+    <div><label class="t" for="pass">Password</label><input type="password" id="pass" maxlength="63" autocomplete="new-password"></div>
+    <label class="check"><input type="checkbox" id="show"> Show password</label>
+    <div class="foot">Empty password = open network. Otherwise 8-63 characters.</div>
+    <div class="btns">
+      <button id="save" class="primary" type="button">Save</button>
+      <button id="clear" class="danger" type="button">Clear settings</button>
+    </div>
+    <div id="msg"></div>
+    <div class="foot">Changes take effect after restarting the device (power cycle, RESET button or the "restart yes" command).
+      If the network cannot be joined, the camera starts the default access point.</div>
+  </section>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+let mode = 'sta';
+
+function kv(el, rows) {
+  el.innerHTML = '';
+  rows.forEach(([k, v]) => {
+    const a = document.createElement('span'); a.textContent = k;
+    const b = document.createElement('span'); b.textContent = v;
+    el.append(a, b);
+  });
+}
+
+function setMode(m) {
+  mode = m;
+  $('mSta').classList.toggle('on', m === 'sta');
+  $('mAp').classList.toggle('on', m === 'ap');
+}
+
+function msg(text, ok) {
+  $('msg').textContent = text;
+  $('msg').className = ok ? 'ok' : 'err';
+}
+
+async function load() {
+  try {
+    const s = await (await fetch('/wifi/settings')).json();
+    const c = s.current;
+    kv($('cur'), [['Mode', c.mode], ['SSID', c.ssid || '-'], ['IP', c.ip], ['RSSI', c.mode === 'STA' ? c.rssi + ' dBm' : '-'],
+      ['Started with', s.source + ' settings' + (s.fallback ? ' (fallback to the default AP)' : '')]]);
+    if (s.saved.present) {
+      kv($('saved'), [['Mode', s.saved.mode], ['SSID', s.saved.ssid], ['Password', s.saved.hasPassword ? 'set (hidden)' : 'none (open)']]);
+      setMode(s.saved.mode === 'AP' ? 'ap' : 'sta');
+      $('ssid').value = s.saved.ssid;
+    } else {
+      kv($('saved'), [['Saved', 'none - using the defaults from code']]);
+    }
+  } catch (e) { msg('Cannot read the settings', false); }
+}
+
+async function post(url, body) {
+  const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body });
+  return r.json();
+}
+
+$('mSta').onclick = () => setMode('sta');
+$('mAp').onclick = () => setMode('ap');
+$('show').onchange = e => $('pass').type = e.target.checked ? 'text' : 'password';
+$('save').onclick = async () => {
+  const ssid = $('ssid').value, pass = $('pass').value;
+  if (!ssid) return msg('Enter the SSID', false);
+  if (pass && (pass.length < 8 || pass.length > 63)) return msg('Password must be empty or 8-63 characters', false);
+  try {
+    const r = await post('/wifi/save', new URLSearchParams({ mode, ssid, password: pass }).toString());
+    msg(r.message, r.ok);
+    if (r.ok) { $('pass').value = ''; load(); }
+  } catch (e) { msg('Save failed', false); }
+};
+$('clear').onclick = async () => {
+  if (!confirm('Erase the saved WiFi settings? The defaults from code will be used after a restart.')) return;
+  try {
+    const r = await post('/wifi/clear', '');
+    msg(r.message, r.ok);
+    if (r.ok) load();
+  } catch (e) { msg('Clear failed', false); }
+};
+load();
+</script>
+</body>
+</html>
+)rawliteral";
+
+const size_t WIFI_HTML_LEN = sizeof(WIFI_HTML) - 1;
+#endif
 
 }  // namespace espcamweb

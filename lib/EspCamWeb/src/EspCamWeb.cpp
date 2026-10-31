@@ -27,7 +27,13 @@ bool EspCamWeb::begin(const EspCamWebConfig &config) {
 
   WifiSettings wifi = config.wifi;
   wifi.mdnsHttpPort = config.server.httpPort;
+#if WIFI_SETTINGS_ON
+  settings_.begin();
+  camera_.attachSettings(settings_);
+  if (!wifi_.begin(wifi, settings_)) return false;  // saved NVS settings take precedence
+#else
   if (!wifi_.begin(wifi)) return false;
+#endif
   if (!server_.begin(config.server)) return false;
 #if TELNET_SERVER_ON
   telnet_.begin(config.telnet);

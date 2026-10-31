@@ -24,6 +24,7 @@ Services and their pins are set in a single file: [`lib/EspCamWeb/src/EspCamFeat
 | `SERVO_MOTORS_ON` | 0 | two servos: horizontal `SERVO_PAN_PIN` (12) and vertical `SERVO_TILT_PIN` (13) |
 | `COM_SERVER_ON` | 1 | text commands over the serial port (`pio device monitor`) |
 | `TELNET_SERVER_ON` | 1 | the same commands over Telnet: `telnet esp32cam.local` (port `TELNET_PORT`, password `TELNET_PASSWORD`, no password by default) |
+| `WIFI_SETTINGS_ON` | 1 | WiFi settings (STA/AP, SSID, password) saved in the board's NVS memory, editable on the `/wifi` page and with the `wifi` command |
 
 A disabled module is not compiled and the page does not show its buttons. The buttons are also hidden when a module is enabled but not working (e.g. no card in the slot).
 
@@ -46,6 +47,13 @@ Enter `WIFI_SSID` and `WIFI_PASS` in `include/secrets.h`. The file is in `.gitig
 If the board cannot connect within 15 s, it starts its own access point:
 **ESP32-CAM**, password **12345678**, address `http://192.168.4.1`.
 
+**Changing WiFi without reflashing** (`WIFI_SETTINGS_ON`): on the **WiFi settings** page (`http://<IP>/wifi`, linked from the main page) or with the commands `wifi set sta <ssid> [password]`, `wifi set ap <ssid> [password]`, `wifi clear yes`. The settings are saved in the board's NVS memory and survive flashing; they take effect after a **manual restart**.
+- Saved STA: the board joins the saved network; if that fails within 15 s, it starts the default access point above.
+- Saved AP: the board starts its own access point with the saved name and password; if that fails, it starts the default access point.
+- Nothing saved (or after `wifi clear yes`): exactly as before, `secrets.h` and the default access point.
+- An empty password means an open network; otherwise 8–63 characters. The password is never shown on the page, in command replies or in the logs.
+- **Security:** the web page has no login - anyone on the local network can change the WiFi settings. Telnet can be protected with `TELNET_PASSWORD`.
+
 ### 2. Flashing
 
 - **With the ESP32-CAM-MB board** (USB adapter): plug in the cable and upload; the board enters programming mode by itself.
@@ -66,6 +74,7 @@ The monitor (115200) shows the IP address and the command server prompt (`> `). 
 - State as JSON: `http://<IP>/status`
 - Controls: `http://<IP>/control?var=<name>&val=<value>`, where name is `framesize` (5=QVGA, 8=VGA, 9=SVGA, 10=XGA), `quality` (4–63), `led`, `vflip`, `hmirror` (0/1), `pan`, `tilt` (degrees), `center`
 - Photo to the SD card: `http://<IP>/save`
+- WiFi settings: `http://<IP>/wifi`
 
 The page, the COM/Telnet commands and the Serial logs are in English. The page shows two FPS counters: **browser** (frames actually received by the browser) and **server** (frames sent by the ESP32).
 
@@ -78,7 +87,8 @@ Connect with `pio device monitor` or `telnet esp32cam.local` and type `help`. Th
 - `photo`: photo to the SD card,
 - `sd`, `sd list [N]`: card state and recent photos,
 - `cam`, `cam res vga`, `cam quality 15`: image settings,
-- `wifi`: network state,
+- `wifi`: network state and saved settings,
+- `wifi set sta <ssid> [password]`, `wifi set ap <ssid> [password]`, `wifi clear yes`: change or erase the saved WiFi settings (use "quotes" for spaces; restart to apply),
 - `restart yes`: restart the board.
 
 The full list is in the [library README](lib/EspCamWeb/README.md#command-servers-com-and-telnet). Commands of services disabled in `EspCamFeatures.h` are unavailable. Telnet does not encrypt the connection, so use it only on a trusted network.
@@ -124,6 +134,7 @@ Usługi i ich piny ustawia się w jednym pliku: [`lib/EspCamWeb/src/EspCamFeatur
 | `SERVO_MOTORS_ON` | 0 | dwa serwa: poziom `SERVO_PAN_PIN` (12) i pion `SERVO_TILT_PIN` (13) |
 | `COM_SERVER_ON` | 1 | polecenia tekstowe przez port szeregowy (`pio device monitor`) |
 | `TELNET_SERVER_ON` | 1 | te same polecenia przez Telnet: `telnet esp32cam.local` (port `TELNET_PORT`, hasło `TELNET_PASSWORD`, domyślnie bez hasła) |
+| `WIFI_SETTINGS_ON` | 1 | ustawienia WiFi (STA/AP, SSID, hasło) zapisane w pamięci NVS płytki, do zmiany na stronie `/wifi` i poleceniem `wifi` |
 
 Wyłączony moduł nie jest kompilowany, a strona nie pokazuje jego przycisków. Przycisków nie ma też wtedy, gdy moduł jest włączony, ale nie działa (np. brak karty w slocie).
 
@@ -146,6 +157,13 @@ W pliku `include/secrets.h` wpisz `WIFI_SSID` i `WIFI_PASS`. Plik jest w `.gitig
 Jeśli płytka nie połączy się z siecią w ciągu 15 s, uruchomi własny punkt dostępowy:
 **ESP32-CAM**, hasło **12345678**, adres `http://192.168.4.1`.
 
+**Zmiana WiFi bez ponownego wgrywania** (`WIFI_SETTINGS_ON`): na stronie **WiFi settings** (`http://<IP>/wifi`, link na stronie głównej) albo poleceniami `wifi set sta <ssid> [hasło]`, `wifi set ap <ssid> [hasło]`, `wifi clear yes`. Ustawienia trafiają do pamięci NVS płytki i przetrwają wgranie nowego programu. Działają po **ręcznym restarcie**.
+- Zapisany tryb STA: płytka łączy się z zapisaną siecią. Jeśli się nie uda w ciągu 15 s, uruchamia domyślny punkt dostępowy opisany wyżej.
+- Zapisany tryb AP: płytka uruchamia własny punkt dostępowy z zapisaną nazwą i hasłem. Przy błędzie uruchamia domyślny punkt dostępowy.
+- Brak zapisanych ustawień (albo po `wifi clear yes`): dokładnie jak dotąd, czyli `secrets.h` i domyślny punkt dostępowy.
+- Puste hasło oznacza sieć otwartą, a w przeciwnym razie hasło musi mieć 8–63 znaki. Hasło nigdy nie jest pokazywane na stronie, w odpowiedziach poleceń ani w logach.
+- **Bezpieczeństwo:** strona nie ma logowania, więc każdy w sieci lokalnej może zmienić ustawienia WiFi. Telnet można zabezpieczyć hasłem `TELNET_PASSWORD`.
+
 ### 2. Wgrywanie
 
 - **Z płytką ESP32-CAM-MB** (nakładka z USB): podłącz kabel i wgraj, płytka sama przejdzie w tryb programowania.
@@ -166,6 +184,7 @@ Na monitorze (115200) pojawi się adres IP i znak zachęty serwera poleceń (`> 
 - Stan w JSON: `http://<IP>/status`
 - Sterowanie: `http://<IP>/control?var=<nazwa>&val=<wartość>`, gdzie nazwa to `framesize` (5=QVGA, 8=VGA, 9=SVGA, 10=XGA), `quality` (4–63), `led`, `vflip`, `hmirror` (0/1), `pan`, `tilt` (stopnie), `center`
 - Zdjęcie na kartę SD: `http://<IP>/save`
+- Ustawienia WiFi: `http://<IP>/wifi`
 
 Strona, polecenia COM/Telnet i logi na Serial są po angielsku. Na stronie widać dwa liczniki FPS: **browser** (klatki faktycznie odebrane przez przeglądarkę) i **server** (klatki wysłane przez ESP32).
 
@@ -178,7 +197,8 @@ Połącz się przez `pio device monitor` albo `telnet esp32cam.local` i wpisz `h
 - `photo`: zdjęcie na kartę SD,
 - `sd`, `sd list [N]`: stan karty i ostatnie zdjęcia,
 - `cam`, `cam res vga`, `cam quality 15`: ustawienia obrazu,
-- `wifi`: stan sieci,
+- `wifi`: stan sieci i zapisane ustawienia,
+- `wifi set sta <ssid> [hasło]`, `wifi set ap <ssid> [hasło]`, `wifi clear yes`: zmiana lub skasowanie zapisanych ustawień WiFi (spacje w „cudzysłowie”; działa po restarcie),
 - `restart yes`: restart płytki.
 
 Pełna lista jest w [README biblioteki](lib/EspCamWeb/README.md#serwery-poleceń-com-i-telnet). Polecenia usług wyłączonych w `EspCamFeatures.h` są niedostępne. Telnet nie szyfruje połączenia, więc używaj go tylko w zaufanej sieci.

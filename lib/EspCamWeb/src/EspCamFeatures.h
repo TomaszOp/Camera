@@ -17,6 +17,9 @@
                            ///< SDMMC pins are fixed in the ESP32: CLK 14, CMD 15, D0 2 - not configurable.
 #define SERVO_MOTORS_ON 0  ///< Two servos: horizontal (pan) and vertical (tilt).
 
+// ---------- WiFi settings ----------
+#define WIFI_SETTINGS_ON 1  ///< WiFi mode/SSID/password saved in NVS, editable via /wifi, COM and Telnet.
+
 // ---------- Command servers (same commands: help, info, led, servo, photo...) ----------
 #define COM_SERVER_ON    1  ///< Commands over the serial port (pio device monitor).
 #define TELNET_SERVER_ON 1  ///< Commands over Telnet: telnet esp32cam.local

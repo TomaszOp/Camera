@@ -10,7 +10,7 @@
 
 namespace espcamweb {
 
-static const int MAX_ARGS = 4;     ///< Maximum number of words parsed from a line (command + 3 arguments).
+static const int MAX_ARGS = 6;     ///< Maximum number of words parsed from a line (command + 5 arguments).
 static const int SERVO_STEP = 10;  ///< Default step for servo left/right/up/down, degrees.
 
 /**
@@ -34,16 +34,29 @@ CamCommands::Result CamCommands::execute(const String &line, Print &out) {
   unsigned start = 0;
   while (start < line.length() && !isAlpha(line[start])) start++;
 
-  String args[MAX_ARGS];
+  // Split into words; "quoted text" is one word. raw keeps the case (SSID, password),
+  // args is lower-case for keyword comparisons.
+  String raw[MAX_ARGS], args[MAX_ARGS];
   int n = 0;
-  String rest = line.substring(start);
-  rest.trim();
-  rest.toLowerCase();
-  while (rest.length() && n < MAX_ARGS) {
-    int sp = rest.indexOf(' ');
-    args[n++] = sp < 0 ? rest : rest.substring(0, sp);
-    rest = sp < 0 ? String() : rest.substring(sp + 1);
-    rest.trim();
+  unsigned i = start;
+  while (n < MAX_ARGS) {
+    while (i < line.length() && line[i] == ' ') i++;
+    if (i >= line.length()) break;
+    String word;
+    if (line[i] == '"') {
+      int end = line.indexOf('"', i + 1);
+      if (end < 0) end = line.length();
+      word = line.substring(i + 1, end);
+      i = end + 1;
+    } else {
+      int end = line.indexOf(' ', i);
+      if (end < 0) end = line.length();
+      word = line.substring(i, end);
+      i = end;
+    }
+    raw[n] = word;
+    word.toLowerCase();
+    args[n++] = word;
   }
   if (!n) return Result::Ok;
 
@@ -51,7 +64,7 @@ CamCommands::Result CamCommands::execute(const String &line, Print &out) {
   if (cmd == "help" || cmd == "?") help(out);
   else if (cmd == "info") info(out);
   else if (cmd == "status") status(out);
-  else if (cmd == "wifi") wifi(out);
+  else if (cmd == "wifi") wifi(args + 1, raw + 1, n - 1, out);
   else if (cmd == "led") led(args[1], out);
   else if (cmd == "servo") servo(args + 1, n - 1, out);
   else if (cmd == "photo") photo(out);
@@ -69,7 +82,7 @@ void CamCommands::help(Print &out) {
             "  help                      this list\r\n"
             "  info                      version, uptime, memory, network, services\r\n"
             "  status                    summary of all services\r\n"
-            "  wifi                      mode, SSID, IP, RSSI\r\n"
+            "  wifi                      mode, SSID, IP, RSSI, saved settings\r\n"
             "  cam                       resolution, quality, FPS\r\n"
             "  cam res qvga|vga|svga|xga change resolution\r\n"
             "  cam quality N             JPEG quality 4-63 (lower = better)\r\n"
@@ -91,6 +104,12 @@ void CamCommands::help(Print &out) {
     out.print("  sd                        SD card state\r\n"
               "  sd list [N]               last N photos (default 10)\r\n");
   }
+  if (f.settings) {
+    out.print("  wifi set sta <ssid> [password]  save a network to join (restart to apply)\r\n"
+              "  wifi set ap <ssid> [password]   save an own access point (restart to apply)\r\n"
+              "  wifi clear yes            erase saved WiFi settings (use the defaults)\r\n"
+              "                            use \"quotes\" for an SSID or password with spaces\r\n");
+  }
   out.print("  restart yes               restart the board\r\n"
             "  quit                      disconnect (Telnet)\r\n");
 }
@@ -104,9 +123,9 @@ void CamCommands::info(Print &out) {
              (unsigned)(s / 60 % 60), (unsigned)(s % 60));
   out.printf("Memory: heap %u KB free, PSRAM %u KB free of %u KB\r\n", ESP.getFreeHeap() / 1024,
              ESP.getFreePsram() / 1024, ESP.getPsramSize() / 1024);
-  wifi(out);
-  out.printf("Services: LED %s, SD card %s, servos %s\r\n", f.led ? "yes" : "no", f.sd ? "yes" : "no",
-             f.servos ? "yes" : "no");
+  wifiState(out);
+  out.printf("Services: LED %s, SD card %s, servos %s, WiFi settings %s\r\n", f.led ? "yes" : "no",
+             f.sd ? "yes" : "no", f.servos ? "yes" : "no", f.settings ? "yes" : "no");
 }
 
 void CamCommands::status(Print &out) {
@@ -126,7 +145,7 @@ void CamCommands::status(Print &out) {
   }
 }
 
-void CamCommands::wifi(Print &out) {
+void CamCommands::wifiState(Print &out) {
   if (WiFi.status() == WL_CONNECTED) {
     out.printf("WiFi: STA \"%s\", IP %s, RSSI %d dBm\r\n", WiFi.SSID().c_str(),
                WiFi.localIP().toString().c_str(), (int)WiFi.RSSI());
@@ -135,6 +154,38 @@ void CamCommands::wifi(Print &out) {
                WiFi.softAPIP().toString().c_str(), (unsigned)WiFi.softAPgetStationNum());
   } else {
     out.print("WiFi: not connected\r\n");
+  }
+}
+
+void CamCommands::wifi(const String *args, const String *raw, int n, Print &out) {
+  if (n == 0) {
+    wifiState(out);
+    WifiSettingsInfo info;
+    if (!camera_.wifiSettings(info)) return;
+    out.printf("Started with: %s settings%s\r\n", info.start.fromSaved ? "saved" : "default",
+               info.start.fallback ? ", fallback to the default access point" : "");
+    if (info.saved) {
+      // The password itself is never shown
+      out.printf("Saved: %s \"%s\", password %s\r\n", info.role == WifiRole::AccessPoint ? "AP" : "STA",
+                 info.ssid.c_str(), info.hasPassword ? "********" : "none (open network)");
+    } else {
+      out.print("Saved: none (using the defaults from code)\r\n");
+    }
+    return;
+  }
+  if (!camera_.hasWifiSettings()) return unavailable(out, "WiFi settings");
+
+  if (args[0] == "set" && n >= 3 && (args[1] == "sta" || args[1] == "ap")) {
+    WifiRole role = args[1] == "ap" ? WifiRole::AccessPoint : WifiRole::Station;
+    const char *err = camera_.saveWifiSettings(role, raw[2], n >= 4 ? raw[3] : String());
+    if (err) out.printf("Not saved: %s\r\n", err);
+    else out.print("Settings saved. Restart the device to apply (restart yes).\r\n");
+  } else if (args[0] == "clear") {
+    if (n < 2 || args[1] != "yes") return (void)out.print("Confirm with: wifi clear yes\r\n");
+    if (camera_.clearWifiSettings()) out.print("Settings cleared. Restart the device to apply (restart yes).\r\n");
+    else out.print("Failed to clear the settings\r\n");
+  } else {
+    out.print("Usage: wifi [set sta|ap <ssid> [password] | clear yes]  (use \"quotes\" for spaces)\r\n");
   }
 }
 

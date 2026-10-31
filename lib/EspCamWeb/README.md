@@ -4,7 +4,7 @@
 
 ## English
 
-PlatformIO library for a live **ESP32-CAM** camera preview over the web: MJPEG stream, FPS counters, resolution and quality changes, flip/mirror. Optional: LED lamp, saving photos to a microSD card, pan/tilt servos and text commands over the serial port (COM) and Telnet.
+PlatformIO library for a live **ESP32-CAM** camera preview over the web: MJPEG stream, FPS counters, resolution and quality changes, flip/mirror. Optional: LED lamp, saving photos to a microSD card, pan/tilt servos, text commands over the serial port (COM) and Telnet, and WiFi settings saved in NVS.
 Configured for the **AI Thinker (OV2640, 4 MB PSRAM)** by default, but the pins and all parameters can be changed.
 
 Requires Arduino core 3.x (pioarduino platform). The `esp_camera` module is built into the core, so no external camera library is needed.
@@ -51,6 +51,7 @@ Services and their pins are set in a single library file: `src/EspCamFeatures.h`
 #define TELNET_SERVER_ON 1  // commands over Telnet          (CamTelnetServer)
 #define TELNET_PORT      23
 #define TELNET_PASSWORD  "" // "" = no password
+#define WIFI_SETTINGS_ON 1  // WiFi settings in NVS          (NvsSettings)
 
 #define LED_PIN        4
 #define SERVO_PAN_PIN  12
@@ -122,7 +123,7 @@ Conclusions:
 ### Command servers: COM and Telnet
 
 Both servers are, like the web page, front-ends that use only `EspCamera`. Commands are executed by the shared `CamCommands` class, so they are identical on COM and over Telnet.
-- Commands and replies are in English (as are the web page and the Serial logs); commands are case-insensitive.
+- Commands and replies are in English (as are the web page and the Serial logs); commands are case-insensitive. An SSID or password with spaces goes in "double quotes", e.g. `wifi set sta "My Home" "secret pass"`.
 - A command of an unavailable service (disabled in `EspCamFeatures.h` or not working, e.g. no card) replies “Service unavailable”, and `help` does not list it.
 
 | Command | Service | Action |
@@ -130,7 +131,10 @@ Both servers are, like the web page, front-ends that use only `EspCamera`. Comma
 | `help` / `?` | – | list of available commands |
 | `info` | – | version, uptime, free heap/PSRAM, WiFi, list of services |
 | `status` | – | summary: camera, lamp, servos, SD card |
-| `wifi` | – | STA/AP mode, SSID, IP, RSSI |
+| `wifi` | – | STA/AP mode, SSID, IP, RSSI, saved settings (password masked), saved/default, fallback |
+| `wifi set sta <ssid> [password]` | WiFi settings | save a network to join (restart to apply) |
+| `wifi set ap <ssid> [password]` | WiFi settings | save an own access point (restart to apply) |
+| `wifi clear yes` | WiFi settings | erase the saved settings (defaults after a restart) |
 | `cam` | – | resolution, quality, FPS, flip, mirror |
 | `cam res qvga\|vga\|svga\|xga` | – | change resolution |
 | `cam quality N` | – | JPEG quality 4–63 (lower = better) |
@@ -182,6 +186,25 @@ Goodbye.
 
 COM and Telnet commands run in `loop()`, the web page in the httpd tasks. `EspCamera` protects state-changing operations (sensor, lamp, servos, SD writes) with a recursive FreeRTOS mutex. This way you can e.g. take a photo from Telnet while watching the stream.
 
+### WiFi settings (NVS)
+
+With `WIFI_SETTINGS_ON` the WiFi role (STA/AP), SSID and password can be changed without reflashing. `NvsSettings` stores them in the board's NVS memory (core `Preferences` library, namespace `ecw_wifi`), so they survive flashing a new program. New settings take effect after a **manual restart** - the board never restarts by itself.
+
+Start-up (`CamWifi::begin(settings, nvs)`):
+
+| Saved settings | Behaviour | On failure |
+|---|---|---|
+| none | as before: STA with `secrets.h` / `WifiSettings` | default access point from code |
+| STA | joins the saved network (empty password = open network) | default access point from code |
+| AP | starts an own access point with the saved SSID/password (empty = open AP) | default access point from code |
+
+The Serial log shows whether saved or default settings were used and whether the fallback happened (`WiFi settings: saved (STA)`, `Falling back to the default access point`).
+
+- Validation: SSID 1–32 characters; password empty or 8–63 characters (WPA2 requirement). Invalid input is rejected with a message.
+- Changing: the **WiFi settings** page (`/wifi`, linked from the main page), the commands `wifi set sta|ap <ssid> [password]` and `wifi clear yes` over COM/Telnet. All of them go through `EspCamera` (`saveWifiSettings()`, `clearWifiSettings()`, `wifiSettings()`), which never returns the password.
+- **The password is never sent:** not in `/status`, not in `/wifi/settings` (only `hasPassword`), not in command replies (shown as `********`) and not in the logs.
+- **Security:** the web page has no login - anyone on the local network can change the WiFi settings. Telnet is protected only by `TELNET_PASSWORD`, and Telnet is not encrypted.
+
 ### Classes
 
 Every class can be used on its own. Everything is in the `espcamweb` namespace, and the single header `#include <EspCamWeb.h>` includes it all.
@@ -194,6 +217,7 @@ Every class can be used on its own. Everything is in the `espcamweb` namespace, 
 | `CamLed` | `CamLed.h` | `LED_ON`. LED lamp via `ledcAttachChannel` (GPIO4, channel 2, dim). |
 | `CamSdCard` | `CamSdCard.h` | `SD_ON`. microSD card (SD_MMC 1-bit): mounting, free space, saving JPEGs as `/photos/IMG_00001.jpg`… Numbering continues after a restart, because the board has no RTC. |
 | `CamServos` | `CamServos.h` | `SERVO_MOTORS_ON`. Two servos: pan (horizontal) and tilt (vertical), 50 Hz PWM, angles 0–180° with limits. |
+| `NvsSettings` | `NvsSettings.h` | `WIFI_SETTINGS_ON`. WiFi role, SSID and password in NVS: `begin()`, `save()`, `clear()`, `hasSettings()`, validation. |
 | `CamCommands` | `CamCommands.h` | Shared text command interpreter: `execute(line, Print&)`. |
 | `CamComServer` | `CamComServer.h` | `COM_SERVER_ON`. Commands over the serial port, serviced in `loop()` via `handle()`. |
 | `CamTelnetServer` | `CamTelnetServer.h` | `TELNET_SERVER_ON`. Commands over Telnet (ESPTelnet), `handle()` in `loop()`, optional password. |
@@ -240,10 +264,11 @@ Modules are attached to the camera by reference rather than created inside it. T
 
 | Service | Attaching | Methods |
 |---|---|---|
-| all | – | `features()` returns `{led, sd, servos}`: enabled in `EspCamFeatures.h` **and** started successfully (e.g. card inserted) |
+| all | – | `features()` returns `{led, sd, servos, settings}`: enabled in `EspCamFeatures.h` **and** started successfully (e.g. card inserted) |
 | lamp | `attachLed(CamLed&)` | `hasLed()`, `setLed(bool)`, `ledOn()` |
 | SD card | `attachSd(CamSdCard&)` | `hasSd()`, `savePhotoToSd(&bytes)` (returns the file path), `sdPhotoCount()`, `sdFreeBytes()`, `sdLastPhoto()`, `sdListPhotos(Print&, N)` |
 | servos | `attachServos(CamServos&)` | `hasServos()`, `setPan(deg)`, `setTilt(deg)`, `centerServos()`, `pan()`, `tilt()`, `servoLimits(...)` |
+| WiFi settings | `attachSettings(NvsSettings&)` | `hasWifiSettings()`, `wifiSettings(info)` (without the password), `saveWifiSettings(role, ssid, password)`, `clearWifiSettings()` |
 
 The `attach…()` methods exist only when the module is enabled. The other methods always exist and return `false`, 0 or -1 when the module is disabled. This way the server needs no `#if`.
 
@@ -306,10 +331,14 @@ See `examples/Basic/main.cpp`: configuration, `cam.begin(config)` in `setup()` a
 | Address | Description |
 |---|---|
 | `http://<IP>/` | page with the preview and controls |
-| `http://<IP>/status` | JSON: `features` (`led`, `sd`, `servos`), fps, resolution, quality, led, flip, RSSI, PSRAM, number of clients, stream port, `sdPhotos`, `sdFreeMB`, `sdLast`, `pan`, `tilt` |
+| `http://<IP>/status` | JSON: `features` (`led`, `sd`, `servos`, `settings`), fps, resolution, quality, led, flip, RSSI, PSRAM, number of clients, stream port, `sdPhotos`, `sdFreeMB`, `sdLast`, `pan`, `tilt` |
 | `http://<IP>/control?var=X&val=Y` | `framesize` (5 QVGA, 8 VGA, 9 SVGA, 10 XGA), `quality` (4–63), `led`, `vflip`, `hmirror` (0/1), `pan`, `tilt` (degrees), `center` |
 | `http://<IP>/capture` | single JPEG snapshot |
 | `http://<IP>/save` | take a photo and save it to the SD card; JSON `{"ok":true,"file":"/photos/IMG_00001.jpg"}`, code 503 without a card |
+| `http://<IP>/wifi` | WiFi settings page (`WIFI_SETTINGS_ON`) |
+| `GET http://<IP>/wifi/settings` | JSON: current network, `source` (saved/default), `fallback`, saved settings (`mode`, `ssid`, `hasPassword` - never the password) |
+| `POST http://<IP>/wifi/save` | form fields `mode` (sta/ap), `ssid`, `password`; validated, reply `{"ok":..,"message":".."}` |
+| `POST http://<IP>/wifi/clear` | erase the saved settings |
 | `http://<IP>:81/stream` | MJPEG stream (separate httpd instance) |
 
 Notes:
@@ -321,7 +350,7 @@ Notes:
 
 ## Polski
 
-Biblioteka PlatformIO do podglądu kamery **ESP32-CAM** na żywo przez WWW: strumień MJPEG, liczniki FPS, zmiana rozdzielczości i jakości, flip/lustro. Opcjonalnie: lampa LED, zapis zdjęć na kartę microSD, serwa pan/tilt oraz sterowanie poleceniami tekstowymi przez port szeregowy (COM) i Telnet.
+Biblioteka PlatformIO do podglądu kamery **ESP32-CAM** na żywo przez WWW: strumień MJPEG, liczniki FPS, zmiana rozdzielczości i jakości, flip/lustro. Opcjonalnie: lampa LED, zapis zdjęć na kartę microSD, serwa pan/tilt, sterowanie poleceniami tekstowymi przez port szeregowy (COM) i Telnet oraz ustawienia WiFi zapisane w NVS.
 Domyślnie skonfigurowana pod **AI Thinker (OV2640, 4 MB PSRAM)**, ale piny i wszystkie parametry można zmienić.
 
 Wymaga Arduino core 3.x (platforma pioarduino). Moduł `esp_camera` jest wbudowany w core, więc nie trzeba dodawać zewnętrznej biblioteki kamery.
@@ -368,6 +397,7 @@ Usługi i ich piny ustawia się w jednym pliku biblioteki: `src/EspCamFeatures.h
 #define TELNET_SERVER_ON 1  // polecenia przez Telnet         (CamTelnetServer)
 #define TELNET_PORT      23
 #define TELNET_PASSWORD  "" // "" = bez hasła
+#define WIFI_SETTINGS_ON 1  // ustawienia WiFi w NVS         (NvsSettings)
 
 #define LED_PIN        4
 #define SERVO_PAN_PIN  12
@@ -439,7 +469,7 @@ Wnioski:
 ### Serwery poleceń: COM i Telnet
 
 Oba serwery są, tak jak strona WWW, dodatkami korzystającymi wyłącznie z `EspCamera`. Polecenia wykonuje wspólna klasa `CamCommands`, więc na COM i przez Telnet są identyczne.
-- Polecenia i odpowiedzi są po angielsku (tak samo strona WWW i logi na Serial), a wielkość liter w poleceniach nie ma znaczenia.
+- Polecenia i odpowiedzi są po angielsku (tak samo strona WWW i logi na Serial), a wielkość liter w poleceniach nie ma znaczenia. SSID lub hasło ze spacjami podaje się w cudzysłowie, np. `wifi set sta "My Home" "secret pass"`.
 - Polecenie usługi niedostępnej (wyłączonej w `EspCamFeatures.h` albo niedziałającej, np. bez karty) zwraca komunikat „Service unavailable”, a `help` go nie pokazuje.
 
 | Polecenie | Usługa | Działanie |
@@ -447,7 +477,10 @@ Oba serwery są, tak jak strona WWW, dodatkami korzystającymi wyłącznie z `Es
 | `help` / `?` | – | lista dostępnych poleceń |
 | `info` | – | wersja, czas pracy, wolny heap/PSRAM, WiFi, lista usług |
 | `status` | – | skrót stanu: kamera, lampa, serwa, karta SD |
-| `wifi` | – | tryb STA/AP, SSID, IP, RSSI |
+| `wifi` | – | tryb STA/AP, SSID, IP, RSSI, zapisane ustawienia (hasło zamaskowane), saved/default, fallback |
+| `wifi set sta <ssid> [hasło]` | ustawienia WiFi | zapis sieci, z którą płytka ma się łączyć (działa po restarcie) |
+| `wifi set ap <ssid> [hasło]` | ustawienia WiFi | zapis własnego punktu dostępowego (działa po restarcie) |
+| `wifi clear yes` | ustawienia WiFi | skasowanie zapisanych ustawień (po restarcie domyślne) |
 | `cam` | – | rozdzielczość, jakość, FPS, flip, lustro |
 | `cam res qvga\|vga\|svga\|xga` | – | zmiana rozdzielczości |
 | `cam quality N` | – | jakość JPEG 4–63 (mniej = lepsza) |
@@ -499,6 +532,25 @@ Goodbye.
 
 Polecenia COM i Telnet wykonują się w `loop()`, a strona WWW w zadaniach httpd. `EspCamera` chroni operacje zmieniające stan (sensor, lampa, serwa, zapis na SD) rekurencyjnym mutexem FreeRTOS. Dzięki temu można np. zrobić zdjęcie z Telnetu w trakcie oglądania strumienia.
 
+### Ustawienia WiFi (NVS)
+
+Z `WIFI_SETTINGS_ON` tryb WiFi (STA/AP), SSID i hasło można zmieniać bez ponownego wgrywania programu. `NvsSettings` zapisuje je w pamięci NVS płytki (biblioteka `Preferences` z core, przestrzeń nazw `ecw_wifi`), więc przetrwają wgranie nowego programu. Nowe ustawienia działają po **ręcznym restarcie**, bo płytka nigdy nie restartuje się sama.
+
+Start (`CamWifi::begin(settings, nvs)`):
+
+| Zapisane ustawienia | Działanie | Przy błędzie |
+|---|---|---|
+| brak | jak dotąd: STA z `secrets.h` / `WifiSettings` | domyślny punkt dostępowy z kodu |
+| STA | łączy się z zapisaną siecią (puste hasło = sieć otwarta) | domyślny punkt dostępowy z kodu |
+| AP | uruchamia własny punkt dostępowy z zapisanym SSID i hasłem (puste = otwarty AP) | domyślny punkt dostępowy z kodu |
+
+Log na Serial pokazuje, czy użyto zapisanych, czy domyślnych ustawień i czy nastąpił fallback (`WiFi settings: saved (STA)`, `Falling back to the default access point`).
+
+- Walidacja: SSID 1–32 znaki, hasło puste albo 8–63 znaki (wymóg WPA2). Błędne dane są odrzucane z komunikatem.
+- Zmiana: strona **WiFi settings** (`/wifi`, link na stronie głównej) oraz polecenia `wifi set sta|ap <ssid> [hasło]` i `wifi clear yes` przez COM/Telnet. Wszystkie idą przez `EspCamera` (`saveWifiSettings()`, `clearWifiSettings()`, `wifiSettings()`), która nigdy nie zwraca hasła.
+- **Hasło nigdy nie jest wysyłane:** nie ma go w `/status` ani w `/wifi/settings` (jest tylko `hasPassword`), w odpowiedziach poleceń jest pokazane jako `********` i nie trafia do logów.
+- **Bezpieczeństwo:** strona nie ma logowania, więc każdy w sieci lokalnej może zmienić ustawienia WiFi. Telnet chroni tylko `TELNET_PASSWORD`, a Telnet nie jest szyfrowany.
+
 ### Klasy
 
 Każdej klasy można używać samodzielnie. Wszystko jest w przestrzeni nazw `espcamweb`, a jeden nagłówek `#include <EspCamWeb.h>` dołącza całość.
@@ -511,6 +563,7 @@ Każdej klasy można używać samodzielnie. Wszystko jest w przestrzeni nazw `es
 | `CamLed` | `CamLed.h` | `LED_ON`. Lampa LED przez `ledcAttachChannel` (GPIO4, kanał 2, słaba jasność). |
 | `CamSdCard` | `CamSdCard.h` | `SD_ON`. Karta microSD (SD_MMC 1-bit): montowanie, wolne miejsce, zapis JPEG jako `/photos/IMG_00001.jpg`… Numeracja jest kontynuowana po restarcie, bo płytka nie ma zegara RTC. |
 | `CamServos` | `CamServos.h` | `SERVO_MOTORS_ON`. Dwa serwa: pan (poziom) i tilt (pion), PWM 50 Hz, kąty 0–180° z limitami. |
+| `NvsSettings` | `NvsSettings.h` | `WIFI_SETTINGS_ON`. Tryb WiFi, SSID i hasło w NVS: `begin()`, `save()`, `clear()`, `hasSettings()`, walidacja. |
 | `CamCommands` | `CamCommands.h` | Wspólny interpreter poleceń tekstowych: `execute(linia, Print&)`. |
 | `CamComServer` | `CamComServer.h` | `COM_SERVER_ON`. Polecenia przez port szeregowy, obsługiwane w `loop()` przez `handle()`. |
 | `CamTelnetServer` | `CamTelnetServer.h` | `TELNET_SERVER_ON`. Polecenia przez Telnet (ESPTelnet), `handle()` w `loop()`, opcjonalne hasło. |
@@ -557,10 +610,11 @@ Moduły dołącza się do kamery przez referencję, a nie tworzy wewnątrz niej.
 
 | Usługa | Dołączenie | Metody |
 |---|---|---|
-| wszystkie | – | `features()` zwraca `{led, sd, servos}`: włączone w `EspCamFeatures.h` **i** poprawnie uruchomione (np. karta włożona) |
+| wszystkie | – | `features()` zwraca `{led, sd, servos, settings}`: włączone w `EspCamFeatures.h` **i** poprawnie uruchomione (np. karta włożona) |
 | lampa | `attachLed(CamLed&)` | `hasLed()`, `setLed(bool)`, `ledOn()` |
 | karta SD | `attachSd(CamSdCard&)` | `hasSd()`, `savePhotoToSd(&bajty)` (zwraca ścieżkę pliku), `sdPhotoCount()`, `sdFreeBytes()`, `sdLastPhoto()`, `sdListPhotos(Print&, N)` |
 | serwa | `attachServos(CamServos&)` | `hasServos()`, `setPan(deg)`, `setTilt(deg)`, `centerServos()`, `pan()`, `tilt()`, `servoLimits(...)` |
+| ustawienia WiFi | `attachSettings(NvsSettings&)` | `hasWifiSettings()`, `wifiSettings(info)` (bez hasła), `saveWifiSettings(tryb, ssid, hasło)`, `clearWifiSettings()` |
 
 Metody `attach…()` istnieją tylko wtedy, gdy moduł jest włączony. Pozostałe metody istnieją zawsze, a przy wyłączonym module zwracają `false`, 0 albo -1. Dzięki temu serwer nie potrzebuje żadnych `#if`.
 
@@ -623,10 +677,14 @@ Zobacz `examples/Basic/main.cpp`: konfiguracja, `cam.begin(config)` w `setup()` 
 | Adres | Opis |
 |---|---|
 | `http://<IP>/` | strona z podglądem i sterowaniem |
-| `http://<IP>/status` | JSON: `features` (`led`, `sd`, `servos`), fps, rozdzielczość, jakość, led, flip, RSSI, PSRAM, liczba klientów, port strumienia, `sdPhotos`, `sdFreeMB`, `sdLast`, `pan`, `tilt` |
+| `http://<IP>/status` | JSON: `features` (`led`, `sd`, `servos`, `settings`), fps, rozdzielczość, jakość, led, flip, RSSI, PSRAM, liczba klientów, port strumienia, `sdPhotos`, `sdFreeMB`, `sdLast`, `pan`, `tilt` |
 | `http://<IP>/control?var=X&val=Y` | `framesize` (5 QVGA, 8 VGA, 9 SVGA, 10 XGA), `quality` (4–63), `led`, `vflip`, `hmirror` (0/1), `pan`, `tilt` (stopnie), `center` |
 | `http://<IP>/capture` | pojedyncze zdjęcie JPEG |
 | `http://<IP>/save` | zrób zdjęcie i zapisz na karcie SD; JSON `{"ok":true,"file":"/photos/IMG_00001.jpg"}`, a bez karty kod 503 |
+| `http://<IP>/wifi` | strona ustawień WiFi (`WIFI_SETTINGS_ON`) |
+| `GET http://<IP>/wifi/settings` | JSON: obecna sieć, `source` (saved/default), `fallback`, zapisane ustawienia (`mode`, `ssid`, `hasPassword`, nigdy samo hasło) |
+| `POST http://<IP>/wifi/save` | pola formularza `mode` (sta/ap), `ssid`, `password`; walidacja, odpowiedź `{"ok":..,"message":".."}` |
+| `POST http://<IP>/wifi/clear` | skasowanie zapisanych ustawień |
 | `http://<IP>:81/stream` | strumień MJPEG (osobna instancja httpd) |
 
 Uwagi:

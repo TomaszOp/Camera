@@ -8,6 +8,7 @@
 #pragma once
 
 #include <stdint.h>
+#include <WString.h>
 #include "esp_camera.h"
 #include "CameraPins.h"
 #include "EspCamFeatures.h"
@@ -35,6 +36,25 @@ struct CameraSettings {
   int fbCount = 2;                           ///< Number of frame buffers in PSRAM.
   /// Resolution used without PSRAM (single frame buffer in DRAM).
   framesize_t noPsramFrameSize = FRAMESIZE_QVGA;
+};
+
+/// WiFi role stored in the saved settings.
+enum class WifiRole : uint8_t {
+  Station,     ///< Connect to an existing network (STA).
+  AccessPoint  ///< Run an own access point (AP).
+};
+
+/// WiFi settings saved in NVS (see NvsSettings).
+struct StoredWifi {
+  WifiRole role = WifiRole::Station;  ///< Station or access point.
+  String ssid;                        ///< Network name, 1-32 bytes.
+  String password;                    ///< Empty = open network, otherwise 8-63 characters.
+};
+
+/// Where the network configuration used at start-up came from.
+struct WifiStartInfo {
+  bool fromSaved = false;  ///< true = saved settings (NVS), false = defaults from code (secrets.h).
+  bool fallback = false;   ///< true = the configured network failed and the default AP was started.
 };
 
 /// WiFi station, mDNS and fallback access point settings (CamWifi::begin()).

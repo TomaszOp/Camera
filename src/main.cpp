@@ -33,6 +33,9 @@ static CamSdCard sd;  ///< SD card for photos.
 #if SERVO_MOTORS_ON
 static CamServos servos;  ///< Pan/tilt servos.
 #endif
+#if WIFI_SETTINGS_ON
+static NvsSettings settings;  ///< WiFi settings saved in NVS (override secrets.h when present).
+#endif
 
 /**
  * @brief Starts the lamp, camera (restarts the board on failure), SD card, servos, WiFi,
@@ -73,14 +76,23 @@ void setup() {
   camera.attachServos(servos);
 #endif
 
+#if WIFI_SETTINGS_ON
+  settings.begin();
+  camera.attachSettings(settings);
+#endif
+
   CameraFeatures f = camera.features();
-  Serial.printf("Services: LED %s, SD %s, servos %s\n", f.led ? "yes" : "no", f.sd ? "yes" : "no",
-                f.servos ? "yes" : "no");
+  Serial.printf("Services: LED %s, SD %s, servos %s, WiFi settings %s\n", f.led ? "yes" : "no",
+                f.sd ? "yes" : "no", f.servos ? "yes" : "no", f.settings ? "yes" : "no");
 
   WifiSettings net;
   net.ssid = WIFI_SSID;
   net.password = WIFI_PASS;
+#if WIFI_SETTINGS_ON
+  wifi.begin(net, settings);  // saved settings first; on failure the default AP "ESP32-CAM"
+#else
   wifi.begin(net);  // no connection within 15 s -> AP "ESP32-CAM" / 12345678
+#endif
 
   ServerSettings web;  // ports 80 (page) and 81 (stream)
   server.begin(web);

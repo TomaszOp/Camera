@@ -9,6 +9,7 @@
  * - CamLed          - LED lamp (PWM)                       [LED_ON]
  * - CamSdCard       - microSD card for photos              [SD_ON]
  * - CamServos       - pan/tilt servos                      [SERVO_MOTORS_ON]
+ * - NvsSettings     - WiFi settings saved in NVS           [WIFI_SETTINGS_ON]
  * - CamComServer    - commands over the serial port (front-end) [COM_SERVER_ON]
  * - CamTelnetServer - commands over Telnet (front-end)     [TELNET_SERVER_ON]
  * - CamCommands     - command interpreter shared by COM and Telnet
@@ -27,6 +28,7 @@
 #include "CamWifi.h"
 #include "EspCamWebConfig.h"
 #include "EspCamera.h"
+#include "NvsSettings.h"
 
 namespace espcamweb {
 
@@ -51,7 +53,7 @@ class EspCamWeb {
   }
 
   /**
-   * @brief Starts lamp, camera, SD card, servos, WiFi, web server, Telnet and COM, in this order.
+   * @brief Starts lamp, camera, SD card, servos, WiFi settings, WiFi, web server, Telnet and COM, in this order.
    * @param config Settings of all components.
    * @return false if the camera, WiFi or web server failed (details on Serial).
    */
@@ -73,6 +75,10 @@ class EspCamWeb {
 #if SERVO_MOTORS_ON
   /// @return The servos.
   CamServos &servos() { return servos_; }
+#endif
+#if WIFI_SETTINGS_ON
+  /// @return The saved WiFi settings.
+  NvsSettings &settings() { return settings_; }
 #endif
   /// @return The WiFi manager.
   CamWifi &wifi() { return wifi_; }
@@ -97,6 +103,9 @@ class EspCamWeb {
 #endif
 #if SERVO_MOTORS_ON
   CamServos servos_;
+#endif
+#if WIFI_SETTINGS_ON
+  NvsSettings settings_;
 #endif
   CamWifi wifi_;
   CamWebServer server_;

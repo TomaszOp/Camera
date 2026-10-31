@@ -33,7 +33,7 @@ bool CamWebServer::begin(const ServerSettings &settings) {
 
   httpd_config_t config = HTTPD_DEFAULT_CONFIG();
   config.server_port = settings_.httpPort;
-  config.max_uri_handlers = 8;
+  config.max_uri_handlers = 12;
   config.lru_purge_enable = true;
 
   const httpd_uri_t uris[] = {
@@ -42,6 +42,12 @@ bool CamWebServer::begin(const ServerSettings &settings) {
       {"/control", HTTP_GET, controlHandler, this},
       {"/capture", HTTP_GET, captureHandler, this},
       {"/save", HTTP_GET, saveHandler, this},
+#if WIFI_SETTINGS_ON
+      {"/wifi", HTTP_GET, wifiPageHandler, this},
+      {"/wifi/settings", HTTP_GET, wifiSettingsHandler, this},
+      {"/wifi/save", HTTP_POST, wifiSaveHandler, this},
+      {"/wifi/clear", HTTP_POST, wifiClearHandler, this},
+#endif
   };
   if (httpd_start(&webHttpd_, &config) != ESP_OK) {
     Serial.printf("Failed to start the web server on port %u\n", settings_.httpPort);
@@ -118,12 +124,12 @@ esp_err_t CamWebServer::statusHandler(httpd_req_t *req) {
 
   char json[640];
   snprintf(json, sizeof(json),
-           "{\"features\":{\"led\":%d,\"sd\":%d,\"servos\":%d},"
+           "{\"features\":{\"led\":%d,\"sd\":%d,\"servos\":%d,\"settings\":%d},"
            "\"sdPhotos\":%u,\"sdFreeMB\":%u,\"sdLast\":\"%s\",\"pan\":%d,\"tilt\":%d,"
            "\"fps\":%.1f,\"framesize\":%d,\"maxFramesize\":%d,\"name\":\"%s\",\"width\":%u,\"height\":%u,"
            "\"quality\":%d,\"led\":%d,\"vflip\":%d,\"hmirror\":%d,\"rssi\":%d,"
            "\"psram\":%d,\"clients\":%u,\"streamPort\":%u,\"mode\":\"%s\",\"ip\":\"%s\"}",
-           f.led, f.sd, f.servos, (unsigned)cam.sdPhotoCount(), (unsigned)(cam.sdFreeBytes() >> 20),
+           f.led, f.sd, f.servos, f.settings, (unsigned)cam.sdPhotoCount(), (unsigned)(cam.sdFreeBytes() >> 20),
            last.c_str(), cam.pan(), cam.tilt(), cam.fps(), (int)fs, (int)cam.maxFrameSize(), EspCamera::frameSizeName(fs),
            resolution[fs].width, resolution[fs].height, cam.quality(), cam.ledOn(), cam.vflip(), cam.hmirror(), ap ? 0 : (int)WiFi.RSSI(),
            cam.hasPsram(), (unsigned)srv->streamClients_, srv->settings_.streamPort, ap ? "AP" : "STA",
@@ -203,5 +209,138 @@ esp_err_t CamWebServer::streamHandler(httpd_req_t *req) {
   Serial.printf("Stream: client disconnected (%u)\n", (unsigned)--srv->streamClients_);
   return res;
 }
+
+#if WIFI_SETTINGS_ON
+/**
+ * @brief Escapes a string for use inside a JSON string literal (quotes, backslash, control characters).
+ * @param in Raw text (e.g. an SSID, which may contain any characters).
+ * @return Escaped text without the surrounding quotes.
+ */
+static String jsonEscape(const String &in) {
+  String out;
+  out.reserve(in.length() + 8);
+  for (unsigned i = 0; i < in.length(); i++) {
+    char c = in[i];
+    if (c == '"' || c == '\\') {
+      out += '\\';
+      out += c;
+    } else if ((uint8_t)c < 0x20) {
+      char buf[8];
+      snprintf(buf, sizeof(buf), "\\u%04x", (unsigned)(uint8_t)c);
+      out += buf;
+    } else {
+      out += c;
+    }
+  }
+  return out;
+}
+
+/**
+ * @brief Decodes an application/x-www-form-urlencoded value ("+" = space, %XX = byte).
+ * @param in Encoded value.
+ * @return Decoded value.
+ */
+static String urlDecode(const char *in) {
+  String out;
+  for (const char *p = in; *p; p++) {
+    if (*p == '+') {
+      out += ' ';
+    } else if (*p == '%' && isxdigit((unsigned char)p[1]) && isxdigit((unsigned char)p[2])) {
+      char hex[3] = {p[1], p[2], 0};
+      out += (char)strtol(hex, nullptr, 16);
+      p += 2;
+    } else {
+      out += *p;
+    }
+  }
+  return out;
+}
+
+/**
+ * @brief Sends a small JSON reply {"ok":..,"message":".."} with an HTTP status.
+ * @param req     Request.
+ * @param status  HTTP status line, e.g. "200 OK".
+ * @param ok      Value of the "ok" field.
+ * @param message Message for the user (escaped here).
+ * @return Result of httpd_resp_sendstr().
+ */
+static esp_err_t sendResult(httpd_req_t *req, const char *status, bool ok, const String &message) {
+  httpd_resp_set_status(req, status);
+  httpd_resp_set_type(req, "application/json");
+  httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+  String json = String("{\"ok\":") + (ok ? "true" : "false") + ",\"message\":\"" + jsonEscape(message) + "\"}";
+  return httpd_resp_sendstr(req, json.c_str());
+}
+
+esp_err_t CamWebServer::wifiPageHandler(httpd_req_t *req) {
+  httpd_resp_set_type(req, "text/html; charset=utf-8");
+  return httpd_resp_send(req, WIFI_HTML, WIFI_HTML_LEN);
+}
+
+esp_err_t CamWebServer::wifiSettingsHandler(httpd_req_t *req) {
+  EspCamera &cam = self(req)->camera_;
+  WifiSettingsInfo info;
+  cam.wifiSettings(info);
+
+  bool sta = WiFi.status() == WL_CONNECTED;
+  String curSsid = sta ? WiFi.SSID() : WiFi.softAPSSID();
+  String curIp = sta ? WiFi.localIP().toString() : WiFi.softAPIP().toString();
+
+  // The password is never sent - only whether one is saved
+  String json = "{\"current\":{\"mode\":\"";
+  json += sta ? "STA" : "AP";
+  json += "\",\"ssid\":\"" + jsonEscape(curSsid) + "\",\"ip\":\"" + curIp + "\",\"rssi\":";
+  json += sta ? (int)WiFi.RSSI() : 0;
+  json += "},\"source\":\"";
+  json += info.start.fromSaved ? "saved" : "default";
+  json += "\",\"fallback\":";
+  json += info.start.fallback ? "true" : "false";
+  json += ",\"saved\":{\"present\":";
+  json += info.saved ? "true" : "false";
+  if (info.saved) {
+    json += ",\"mode\":\"";
+    json += info.role == WifiRole::AccessPoint ? "AP" : "STA";
+    json += "\",\"ssid\":\"" + jsonEscape(info.ssid) + "\",\"hasPassword\":";
+    json += info.hasPassword ? "true" : "false";
+  }
+  json += "}}";
+
+  httpd_resp_set_type(req, "application/json");
+  httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+  return httpd_resp_sendstr(req, json.c_str());
+}
+
+esp_err_t CamWebServer::wifiSaveHandler(httpd_req_t *req) {
+  EspCamera &cam = self(req)->camera_;
+  char body[256];
+  if (req->content_len >= sizeof(body)) return sendResult(req, "400 Bad Request", false, "request too long");
+  int len = 0;
+  while (len < (int)req->content_len) {
+    int r = httpd_req_recv(req, body + len, req->content_len - len);
+    if (r <= 0) return sendResult(req, "400 Bad Request", false, "cannot read the request");
+    len += r;
+  }
+  body[len] = 0;
+
+  char mode[8] = "", ssid[100] = "", pass[200] = "";
+  httpd_query_key_value(body, "mode", mode, sizeof(mode));
+  if (httpd_query_key_value(body, "ssid", ssid, sizeof(ssid)) != ESP_OK) {
+    return sendResult(req, "400 Bad Request", false, "SSID is missing");
+  }
+  httpd_query_key_value(body, "password", pass, sizeof(pass));  // missing = open network
+  if (strcmp(mode, "sta") && strcmp(mode, "ap")) return sendResult(req, "400 Bad Request", false, "mode must be sta or ap");
+
+  WifiRole role = strcmp(mode, "ap") == 0 ? WifiRole::AccessPoint : WifiRole::Station;
+  const char *err = cam.saveWifiSettings(role, urlDecode(ssid), urlDecode(pass));
+  if (err) return sendResult(req, "400 Bad Request", false, err);
+  return sendResult(req, "200 OK", true, "Settings saved. Restart the device to apply.");
+}
+
+esp_err_t CamWebServer::wifiClearHandler(httpd_req_t *req) {
+  EspCamera &cam = self(req)->camera_;
+  if (!cam.clearWifiSettings()) return sendResult(req, "500 Internal Server Error", false, "failed to clear the settings");
+  return sendResult(req, "200 OK", true, "Settings cleared. Restart the device to apply.");
+}
+#endif
 
 }  // namespace espcamweb

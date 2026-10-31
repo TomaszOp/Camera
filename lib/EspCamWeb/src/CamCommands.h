@@ -36,6 +36,7 @@ class CamCommands {
    * @brief Executes one command line and prints the reply.
    *
    * Leading non-letter characters are skipped (e.g. Telnet negotiation bytes in the first line).
+   * Words are separated by spaces; "double quotes" group a word containing spaces (e.g. an SSID).
    * @param line Raw input line.
    * @param out  Where the reply is printed.
    * @return Result::Quit for quit/exit, otherwise Result::Ok.
@@ -49,8 +50,17 @@ class CamCommands {
   void info(Print &out);
   /// @brief "status" - one line per service: camera, lamp, servos, SD card. @param out Output.
   void status(Print &out);
-  /// @brief "wifi" - mode, SSID, IP and RSSI (or AP clients). @param out Output.
-  void wifi(Print &out);
+  /// @brief Prints the current network state: mode, SSID, IP and RSSI (or AP clients). @param out Output.
+  void wifiState(Print &out);
+  /**
+   * @brief "wifi [set sta|ap <ssid> [password] | clear yes]" - shows the network state and the saved
+   *        settings (password masked), or changes/erases the saved settings.
+   * @param args Lower-case arguments after "wifi".
+   * @param raw  The same arguments in their original case (for SSID and password).
+   * @param n    Number of arguments.
+   * @param out  Output.
+   */
+  void wifi(const String *args, const String *raw, int n, Print &out);
   /**
    * @brief "led [on|off|toggle]" - switches the lamp or shows its state.
    * @param arg Sub-command, empty = show state.

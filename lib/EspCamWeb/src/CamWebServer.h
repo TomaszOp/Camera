@@ -2,7 +2,8 @@
  * @file CamWebServer.h
  * @brief Camera web server on esp_http_server (ESP-IDF).
  *
- * - httpPort:   page, /control, /status, /capture, /save (photo to SD card)
+ * - httpPort:   page, /control, /status, /capture, /save (photo to SD card),
+ *               /wifi pages and API (WiFi settings, with WIFI_SETTINGS_ON)
  * - streamPort: /stream (MJPEG) in a separate httpd instance, so the page never blocks the stream
  *
  * Independent of the rest of the library: needs only an EspCamera object
@@ -93,6 +94,38 @@ class CamWebServer {
    * @return Error that ended the stream (normally a send failure on disconnect).
    */
   static esp_err_t streamHandler(httpd_req_t *req);
+
+#if WIFI_SETTINGS_ON
+  /**
+   * @brief GET /wifi - serves the WiFi settings page.
+   * @param req Request.
+   * @return ESP_OK or a send error.
+   */
+  static esp_err_t wifiPageHandler(httpd_req_t *req);
+
+  /**
+   * @brief GET /wifi/settings - JSON with the current network, the saved settings (never the
+   *        password, only whether one is set) and how the network was started.
+   * @param req Request.
+   * @return ESP_OK or a send error.
+   */
+  static esp_err_t wifiSettingsHandler(httpd_req_t *req);
+
+  /**
+   * @brief POST /wifi/save - form fields mode (sta|ap), ssid, password; validates and saves them.
+   *        Takes effect after a manual restart.
+   * @param req Request.
+   * @return ESP_OK (400 with the error message for invalid input).
+   */
+  static esp_err_t wifiSaveHandler(httpd_req_t *req);
+
+  /**
+   * @brief POST /wifi/clear - erases the saved settings (defaults apply after a restart).
+   * @param req Request.
+   * @return ESP_OK (500 if NVS could not be cleared).
+   */
+  static esp_err_t wifiClearHandler(httpd_req_t *req);
+#endif
 
   EspCamera &camera_;                      ///< Camera served by all handlers.
   ServerSettings settings_;                ///< Ports in use.

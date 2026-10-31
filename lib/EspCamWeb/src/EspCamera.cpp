@@ -220,6 +220,42 @@ bool EspCamera::centerServos() {
   ECW_LOCK; return false; }
 #endif
 
+// ---------- WiFi settings ----------
+#if WIFI_SETTINGS_ON
+bool EspCamera::hasWifiSettings() const { return settings_ != nullptr; }
+bool EspCamera::wifiSettings(WifiSettingsInfo &info) const {
+  info = WifiSettingsInfo();
+  if (!settings_) return false;
+  info.saved = settings_->hasSettings();
+  if (info.saved) {
+    info.role = settings_->stored().role;
+    info.ssid = settings_->stored().ssid;
+    info.hasPassword = settings_->stored().password.length() > 0;
+  }
+  info.start = settings_->startInfo();
+  return true;
+}
+const char *EspCamera::saveWifiSettings(WifiRole role, const String &ssid, const String &password) {
+  ECW_LOCK;
+  if (!settings_) return "WiFi settings unavailable";
+  return settings_->save(role, ssid, password);
+}
+bool EspCamera::clearWifiSettings() {
+  ECW_LOCK;
+  return settings_ && settings_->clear();
+}
+#else
+bool EspCamera::hasWifiSettings() const { return false; }
+bool EspCamera::wifiSettings(WifiSettingsInfo &info) const {
+  info = WifiSettingsInfo();
+  return false;
+}
+const char *EspCamera::saveWifiSettings(WifiRole, const String &, const String &) {
+  return "WiFi settings unavailable";
+}
+bool EspCamera::clearWifiSettings() { return false; }
+#endif
+
 const char *EspCamera::frameSizeName(framesize_t fs) {
   switch (fs) {
     case FRAMESIZE_QVGA: return "QVGA";
