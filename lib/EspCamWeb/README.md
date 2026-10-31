@@ -1,11 +1,332 @@
 # EspCamWeb
 
+**[English](#english)** | **[Polski](#polski)**
+
+## English
+
+PlatformIO library for a live **ESP32-CAM** camera preview over the web: MJPEG stream, FPS counters, resolution and quality changes, flip/mirror. Optional: LED lamp, saving photos to a microSD card, pan/tilt servos and text commands over the serial port (COM) and Telnet.
+Configured for the **AI Thinker (OV2640, 4 MB PSRAM)** by default, but the pins and all parameters can be changed.
+
+Requires Arduino core 3.x (pioarduino platform). The `esp_camera` module is built into the core, so no external camera library is needed.
+
+### Adding it to another project
+
+There are three options:
+
+1. **Copy:** copy the `EspCamWeb` directory into your project's `lib/`.
+2. **Shared library directory** in `platformio.ini`:
+   ```ini
+   lib_extra_dirs = /home/tomek/Documents/PlatformIO/Projects/Camera/lib
+   ```
+3. **Link:** library changes are immediately visible in all projects.
+   ```ini
+   lib_deps = symlink:///home/tomek/Documents/PlatformIO/Projects/Camera/lib/EspCamWeb
+   ```
+
+#### Required `platformio.ini` settings
+
+```ini
+[env:esp32cam]
+platform = https://github.com/pioarduino/platform-espressif32/releases/download/stable/platform-espressif32.zip
+board = esp32cam
+framework = arduino
+monitor_speed = 115200
+board_build.partitions = huge_app.csv      ; the ~1.1 MB application does not fit the default partition
+lib_deps =
+    lennarthennigs/ESP Telnet@^2.3.0       ; only for TELNET_SERVER_ON (also pulled in by library.json)
+build_flags =
+    -DBOARD_HAS_PSRAM
+    -mfix-esp32-psram-cache-issue
+```
+
+### Optional modules: `EspCamFeatures.h`
+
+Services and their pins are set in a single library file: `src/EspCamFeatures.h` (1 = enabled, 0 = disabled). The code of a disabled service is not compiled at all. The library and the program read the same file, so the settings always match.
+
+```cpp
+#define LED_ON          1   // flash LED lamp            (CamLed)
+#define SD_ON           1   // microSD card for photos   (CamSdCard)
+#define SERVO_MOTORS_ON 0   // pan/tilt servos           (CamServos)
+#define COM_SERVER_ON    1  // commands over the serial port (CamComServer)
+#define TELNET_SERVER_ON 1  // commands over Telnet          (CamTelnetServer)
+#define TELNET_PORT      23
+#define TELNET_PASSWORD  "" // "" = no password
+
+#define LED_PIN        4
+#define SERVO_PAN_PIN  12
+#define SERVO_TILT_PIN 13
+```
+
+- A library added through `symlink://` or `lib_extra_dirs` is shared by every project that uses it, so a change in `EspCamFeatures.h` affects all of them. If a project needs a different set of services, copy the library into its `lib/`.
+- `EspCamFeatures.h` checks pin collisions at compile time: with the camera, with the SD card, LED with a servo, pan with tilt, and pins 34–39, which are input-only. A collision gives an `#error` with a description.
+
+#### Pin and LEDC channel assignment (AI Thinker)
+
+| Resource | Pins | LEDC |
+|---|---|---|
+| Camera | 0, 5, 18, 19, 21, 22, 23, 25, 26, 27, 32, 34, 35, 36, 39 (PSRAM: 16, 17) | **low-speed** group: channel 0, timer 0 (XCLK 20 MHz, 1 bit) |
+| LED lamp | 4 | **high-speed** group: channel 2, timer 0 (5 kHz, 8 bits) |
+| SD card (1-bit) | 2 (D0), 14 (CLK), 15 (CMD) | – |
+| Pan / tilt servo | 12 / 13 | **high-speed** group: channels 4 and 5, shared timer 1 (50 Hz, 14 bits) |
+
+- The card runs in **1-bit** mode. In 4-bit mode it would also take GPIO 4, 12 and 13, i.e. the lamp and servo pins.
+
+#### Camera, lamp and servos together: timers and interrupts
+
+The camera, lamp and servos can run at the same time without conflicts. Verified against the installed code (Arduino core 3.3.9, esp32-camera from ESP-IDF 5.5):
+- **Separate timers.** The ESP32 has two independent LEDC groups with 4 timers each: high-speed and low-speed.
+  - The camera driver (`xclk.c`, function `xclk_timer_conf`) sets up XCLK in the **low-speed** group on timer 0, with 1-bit resolution at 20 MHz.
+  - Arduino assigns the group as `channel / 8`, so channels 2, 4 and 5 land in the **high-speed** group.
+  - There the core picks the first free timer (`find_free_timer` in `esp32-hal-ledc.c`): the lamp gets timer 0 and both servos (same 50 Hz) share timer 1.
+  - Changing the lamp brightness or moving the servos therefore never touches the camera clock.
+- **Trap: channels 8–15.** They belong to the low-speed group. The Arduino core does not know that the camera has taken timer 0 there, because the camera configures it directly through ESP-IDF. So it could reconfigure it and the camera would lose its clock. `CamLed` and `CamServos` reject channels outside 0–7 (constant `LEDC_SAFE_CHANNELS`) and print an error.
+- **Interrupts.**
+  - LEDC as used here generates no interrupts: `ledcWrite` only writes the duty, and the LEDC interrupt handler is installed only by `ledcFade`, which is not used. The servos hold their position in hardware, without the CPU.
+  - The camera uses the I2S/DMA interrupt and a GPIO interrupt on VSYNC (`ll_cam.c`).
+  - The SD card has the SDMMC controller interrupt, and WiFi has its own.
+  - These are separate sources allocated independently by ESP-IDF (`esp_intr_alloc`), so nothing is shared.
+- **Threads.** Servo and lamp commands come from the web server tasks and from `loop()` (COM/Telnet). `EspCamera` serialises them with a recursive mutex. `capture()` is not locked, so the stream never waits for the servos or for SD writes.
+
+**Servo power – this is the real source of problems:**
+- power the servos from a separate 5 V supply (at least 1 A for two small servos), not from the board's 5 V pin,
+- the servo ground and the ESP32-CAM ground must be connected (common ground), otherwise the control signal does not work,
+- put a 470–1000 µF electrolytic capacitor on the servo supply.
+
+A servo starting to move briefly draws up to 0.5–1 A each. On a shared supply this causes voltage drops, resets (“brownout”), stripes and glitches in the image and WiFi drop-outs.
+
+#### SD card: SDMMC interface, not SPI
+
+`CamSdCard` uses the hardware **SDMMC** controller through the core's `SD_MMC` library. It does not use the `SD` library (`SD.h`), which works over **SPI**. SDMMC is faster and does not occupy the SPI bus. It is also how the microSD slot on the ESP32-CAM board is wired.
+
+**The pins are fixed and cannot be changed.** On the classic ESP32, slot 1 of the SDMMC controller is hard-wired to specific pins. That is why the card pins appear neither in `EspCamFeatures.h` nor in `SdSettings`. ESP-IDF defines them in `soc/esp32/include/soc/sdmmc_pins.h` (`SDMMC_SLOT1_IOMUX_PIN_NUM_*`), and `SD_MMC.begin()` uses them automatically.
+
+| Card signal | GPIO | 1-bit mode (default) | 4-bit mode |
+|---|---|---|---|
+| CLK | 14 | used | used |
+| CMD | 15 | used | used |
+| D0 | 2 | used | used |
+| D1 | 4 | free (LED lamp) | used |
+| D2 | 12 | free (pan servo) | used |
+| D3 | 13 | free (tilt servo) | used |
+
+Conclusions:
+- The microSD slot on the ESP32-CAM AI Thinker is wired to exactly these pins, together with the pull-up resistors.
+- Your own SD slot on another classic ESP32 board must be connected to exactly these pins, with 10 kΩ pull-ups on CMD and D0–D3. A card on other pins would need SPI and a separate class based on `SD.h`.
+- The card must be formatted as **FAT32** and inserted **before power-up**. `begin()` detects it only at start-up.
+- On the ESP32-S3 the SDMMC pins can be chosen freely (`SD_MMC.setPins()`), but this library does not support that yet.
+- GPIO2 must be low or floating while flashing firmware. A card in the slot sometimes interferes with this. If flashing fails, remove the card for that time.
+- **GPIO12 is a strapping pin** that sets the flash memory voltage at boot (low = 3.3 V, correct). This normally works as is: GPIO12 has an internal pull-down and the input of a typical servo (SG90, MG90S) does not pull the line high. If the board still does not boot with a servo connected, add a **10 kΩ resistor between GPIO12 and GND**. It forces the low level at boot and does not affect servo control. Permanent but **irreversible** fix: `espefuse.py set_flash_voltage 3.3V` burns the flash voltage into eFuse, and GPIO12 is no longer a strapping pin.
+- Power the servos separately from 5 V, not from the board.
+- The ESP32Servo library is not used for the servos, because it allocates LEDC timers on its own and collides with the camera.
+
+### Command servers: COM and Telnet
+
+Both servers are, like the web page, front-ends that use only `EspCamera`. Commands are executed by the shared `CamCommands` class, so they are identical on COM and over Telnet.
+- Commands and replies are in English (as are the web page and the Serial logs); commands are case-insensitive.
+- A command of an unavailable service (disabled in `EspCamFeatures.h` or not working, e.g. no card) replies “Service unavailable”, and `help` does not list it.
+
+| Command | Service | Action |
+|---|---|---|
+| `help` / `?` | – | list of available commands |
+| `info` | – | version, uptime, free heap/PSRAM, WiFi, list of services |
+| `status` | – | summary: camera, lamp, servos, SD card |
+| `wifi` | – | STA/AP mode, SSID, IP, RSSI |
+| `cam` | – | resolution, quality, FPS, flip, mirror |
+| `cam res qvga\|vga\|svga\|xga` | – | change resolution |
+| `cam quality N` | – | JPEG quality 4–63 (lower = better) |
+| `cam flip on\|off`, `cam mirror on\|off` | – | flip / mirror the image |
+| `photo` | – / SD | with a card: save to SD (file name and size); without a card: frame size only |
+| `led` | LED | lamp state |
+| `led on\|off\|toggle` | LED | on / off / toggle |
+| `servo` | servos | positions and ranges |
+| `servo pan N`, `servo tilt N` | servos | horizontal / vertical angle |
+| `servo N M` | servos | both angles at once (pan tilt) |
+| `servo left\|right\|up\|down [step]` | servos | move by a step (default 10°) |
+| `servo center` | servos | center position |
+| `sd` | SD | number of photos, free MB, last photo |
+| `sd list [N]` | SD | last N photos (default 10) with sizes |
+| `restart yes` | – | restart the board (requires the `yes` confirmation) |
+| `quit` / `exit` | – | disconnect (Telnet) |
+
+#### Connecting
+
+- **COM:** `pio device monitor` (115200). The server uses the same `Serial` port as the logs. With the COM server enabled the periodic FPS log is disabled by default so it does not interrupt typing; the `cam` and `status` commands show FPS. The server echoes typed characters and supports Backspace.
+- **Telnet:** `telnet esp32cam.local` or `telnet <IP>`; on Windows e.g. PuTTY in Telnet mode. Works in both STA and AP mode.
+
+```text
+$ telnet esp32cam.local
+EspCamWeb 1.1.0 - ESP32-CAM
+Type help for the list of commands, quit to disconnect.
+> led on
+Lamp: on
+> servo 60 100
+Service unavailable: servos (disabled in EspCamFeatures.h or not working)
+> photo
+Saved /photos/IMG_00012.jpg (48 KB)
+> sd list 3
+  /photos/IMG_00012.jpg  48 KB
+  /photos/IMG_00011.jpg  47 KB
+  /photos/IMG_00010.jpg  51 KB
+> quit
+Goodbye.
+```
+
+#### Telnet: library and limitations
+
+- The Arduino core has no Telnet server, only a raw `WiFiServer`. That is why `CamTelnetServer` uses the ready-made **ESPTelnet** library (`lennarthennigs/ESP Telnet` 2.3.0, updated in 2026). It compiles with core 3.x without warnings.
+- **One client at a time** is supported. A further connection is rejected and a message appears on Serial.
+- **Telnet encrypts nothing**, including the `TELNET_PASSWORD`. Use it only on a trusted home network.
+- ESPTelnet includes `ETH.h`, so about 12 KB of Ethernet support ends up in the program, even with `TELNET_SERVER_ON 0`. This cannot be turned off without modifying the framework package. **Do not add `lib_ignore = Ethernet`:** pioarduino then removes the Ethernet paths in the shared framework package, which breaks the build of other projects too.
+
+#### Threads
+
+COM and Telnet commands run in `loop()`, the web page in the httpd tasks. `EspCamera` protects state-changing operations (sensor, lamp, servos, SD writes) with a recursive FreeRTOS mutex. This way you can e.g. take a photo from Telnet while watching the stream.
+
+### Classes
+
+Every class can be used on its own. Everything is in the `espcamweb` namespace, and the single header `#include <EspCamWeb.h>` includes it all.
+
+| Class | File | Role |
+|---|---|---|
+| `EspCamera` | `EspCamera.h` | **The hub.** Camera: initialisation (with a no-PSRAM fallback), `capture()`/`release()`, resolution, quality, flip, mirror, FPS. All optional services go through it (table below). Needs neither WiFi nor a server. |
+| `CamWebServer` | `CamWebServer.h` | Web server (esp_http_server), i.e. a front-end. Depends only on `EspCamera` and shows only the services the camera provides. |
+| `CamWifi` | `CamWifi.h` | WiFi station without power saving, mDNS and a fallback access point. |
+| `CamLed` | `CamLed.h` | `LED_ON`. LED lamp via `ledcAttachChannel` (GPIO4, channel 2, dim). |
+| `CamSdCard` | `CamSdCard.h` | `SD_ON`. microSD card (SD_MMC 1-bit): mounting, free space, saving JPEGs as `/photos/IMG_00001.jpg`… Numbering continues after a restart, because the board has no RTC. |
+| `CamServos` | `CamServos.h` | `SERVO_MOTORS_ON`. Two servos: pan (horizontal) and tilt (vertical), 50 Hz PWM, angles 0–180° with limits. |
+| `CamCommands` | `CamCommands.h` | Shared text command interpreter: `execute(line, Print&)`. |
+| `CamComServer` | `CamComServer.h` | `COM_SERVER_ON`. Commands over the serial port, serviced in `loop()` via `handle()`. |
+| `CamTelnetServer` | `CamTelnetServer.h` | `TELNET_SERVER_ON`. Commands over Telnet (ESPTelnet), `handle()` in `loop()`, optional password. |
+| `EspCamWeb` | `EspCamWeb.h` | Optional facade that starts all of the above at once. |
+
+The configuration is in `EspCamWebConfig.h`. Every structure has default values.
+- **`CameraSettings`**:
+  - `pins`: `AI_THINKER_PINS` by default
+  - `xclkFreqHz`: 20 MHz
+  - `frameSize`: VGA
+  - `maxFrameSize`: XGA, the buffers are allocated for this size
+  - `jpegQuality`: 12
+  - `fbCount`: 2
+  - `noPsramFrameSize`: QVGA
+- **`WifiSettings`**:
+  - `ssid`, `password`: `nullptr` means AP right away
+  - `hostname`: `esp32cam`
+  - `connectTimeoutMs`: 15000
+  - `apFallback`, `apSsid`, `apPassword`, `mdnsHttpPort`
+- **`LedSettings`**: `pin`, `channel`, `freq`, `resolutionBits`, `dutyOn`
+- **`SdSettings`**:
+  - `mountPoint`: `/sdcard`
+  - `photoDir`: `/photos`
+  - `oneBitMode`: `true`
+  - `formatIfMountFailed`: `false`
+- **`ServoSettings`**:
+  - `panPin`, `tiltPin`: from `EspCamFeatures.h`
+  - `panChannel` 4, `tiltChannel` 5
+  - `minPulseUs` 500, `maxPulseUs` 2400
+  - ranges `panMin`/`panMax`, `tiltMin`/`tiltMax`
+  - start position `panStart`/`tiltStart`: 90°
+  - reversed direction: `invertPan`, `invertTilt`
+- **`ServerSettings`**: `httpPort` 80, `streamPort` 81
+- **`ComServerSettings`**: `echo` (`true`), `prompt` (`"> "`)
+- **`TelnetSettings`**: `port` (`TELNET_PORT`), `password` (`TELNET_PASSWORD`)
+- **`EspCamWebConfig`**: all of the above plus `fpsLogIntervalMs` (5000, or 0 with `COM_SERVER_ON`, i.e. no periodic log)
+
+Another camera module: fill in your own `CameraPins` structure and assign it to `config.camera.pins`.
+
+Dependencies: `CamWebServer` / `CamComServer` / `CamTelnetServer` → `EspCamera` → `CamLed` / `CamSdCard` / `CamServos` (each optional). The COM and Telnet servers use `CamCommands`. `CamWifi` is independent.
+Modules are attached to the camera by reference rather than created inside it. This way the camera works without them, and every class can also be used on its own.
+
+#### Services in `EspCamera`
+
+| Service | Attaching | Methods |
+|---|---|---|
+| all | – | `features()` returns `{led, sd, servos}`: enabled in `EspCamFeatures.h` **and** started successfully (e.g. card inserted) |
+| lamp | `attachLed(CamLed&)` | `hasLed()`, `setLed(bool)`, `ledOn()` |
+| SD card | `attachSd(CamSdCard&)` | `hasSd()`, `savePhotoToSd(&bytes)` (returns the file path), `sdPhotoCount()`, `sdFreeBytes()`, `sdLastPhoto()`, `sdListPhotos(Print&, N)` |
+| servos | `attachServos(CamServos&)` | `hasServos()`, `setPan(deg)`, `setTilt(deg)`, `centerServos()`, `pan()`, `tilt()`, `servoLimits(...)` |
+
+The `attach…()` methods exist only when the module is enabled. The other methods always exist and return `false`, 0 or -1 when the module is disabled. This way the server needs no `#if`.
+
+### Examples
+
+#### Explicit use of the classes
+
+```cpp
+#include <EspCamWeb.h>
+using namespace espcamweb;
+
+EspCamera camera;
+CamLed led;
+CamWifi wifi;
+CamWebServer server(camera);   // the server depends only on the camera
+#if SD_ON
+CamSdCard sd;
+#endif
+
+void setup() {
+  Serial.begin(115200);
+  led.begin(LedSettings());
+  camera.attachLed(led);   // the lamp belongs to the camera
+  if (!camera.begin(CameraSettings())) ESP.restart();
+#if SD_ON
+  sd.begin(SdSettings());
+  camera.attachSd(sd);     // no card -> hasSd() == false, the page hides the button
+#endif
+
+  WifiSettings net;
+  net.ssid = "YourNetwork";
+  net.password = "YourPassword";
+  wifi.begin(net);
+  server.begin(ServerSettings());
+}
+
+void loop() {
+  camera.updateFps(millis());   // FPS shown in /status
+  delay(100);
+}
+```
+
+#### Camera only, without a server
+
+```cpp
+EspCamera camera;
+camera.begin(CameraSettings());
+camera_fb_t *fb = camera.capture();   // JPEG: fb->buf, fb->len
+if (fb) { /* send, process... */ camera.release(fb); }
+camera.savePhotoToSd();               // when a card is attached (SD_ON)
+camera.setPan(45);                    // when servos are attached (SERVO_MOTORS_ON)
+```
+
+#### Facade
+
+See `examples/Basic/main.cpp`: configuration, `cam.begin(config)` in `setup()` and `cam.loop()` in `loop()`. The facade creates and attaches the modules enabled in `EspCamFeatures.h` by itself. A missing SD card is not an error: the service is simply unavailable.
+
+### HTTP endpoints
+
+| Address | Description |
+|---|---|
+| `http://<IP>/` | page with the preview and controls |
+| `http://<IP>/status` | JSON: `features` (`led`, `sd`, `servos`), fps, resolution, quality, led, flip, RSSI, PSRAM, number of clients, stream port, `sdPhotos`, `sdFreeMB`, `sdLast`, `pan`, `tilt` |
+| `http://<IP>/control?var=X&val=Y` | `framesize` (5 QVGA, 8 VGA, 9 SVGA, 10 XGA), `quality` (4–63), `led`, `vflip`, `hmirror` (0/1), `pan`, `tilt` (degrees), `center` |
+| `http://<IP>/capture` | single JPEG snapshot |
+| `http://<IP>/save` | take a photo and save it to the SD card; JSON `{"ok":true,"file":"/photos/IMG_00001.jpg"}`, code 503 without a card |
+| `http://<IP>:81/stream` | MJPEG stream (separate httpd instance) |
+
+Notes:
+- The page shows the lamp button, the SD card section and the servo controls (sliders, arrows, center) only when `/status` → `features` says the service is available.
+- `setFrameSize()` rejects a resolution larger than `maxFrameSize`, because the buffer would overflow. The page hides such buttons.
+- FPS is counted by `EspCamera` from the frames taken with `capture()`. The value is refreshed by `updateFps()`, which must be called in `loop()`; the facade does it by itself.
+
+---
+
+## Polski
+
 Biblioteka PlatformIO do podglądu kamery **ESP32-CAM** na żywo przez WWW: strumień MJPEG, liczniki FPS, zmiana rozdzielczości i jakości, flip/lustro. Opcjonalnie: lampa LED, zapis zdjęć na kartę microSD, serwa pan/tilt oraz sterowanie poleceniami tekstowymi przez port szeregowy (COM) i Telnet.
 Domyślnie skonfigurowana pod **AI Thinker (OV2640, 4 MB PSRAM)**, ale piny i wszystkie parametry można zmienić.
 
 Wymaga Arduino core 3.x (platforma pioarduino). Moduł `esp_camera` jest wbudowany w core, więc nie trzeba dodawać zewnętrznej biblioteki kamery.
 
-## Dodanie do innego projektu
+### Dodanie do innego projektu
 
 Masz trzy możliwości:
 
@@ -19,7 +340,7 @@ Masz trzy możliwości:
    lib_deps = symlink:///home/tomek/Documents/PlatformIO/Projects/Camera/lib/EspCamWeb
    ```
 
-### Wymagane ustawienia `platformio.ini`
+#### Wymagane ustawienia `platformio.ini`
 
 ```ini
 [env:esp32cam]
@@ -35,7 +356,7 @@ build_flags =
     -mfix-esp32-psram-cache-issue
 ```
 
-## Moduły opcjonalne: `EspCamFeatures.h`
+### Moduły opcjonalne: `EspCamFeatures.h`
 
 Usługi i ich piny ustawia się w jednym pliku biblioteki: `src/EspCamFeatures.h` (1 = włączona, 0 = wyłączona). Kod wyłączonej usługi w ogóle nie jest kompilowany. Ten sam plik czytają biblioteka i program, więc ustawienia są zawsze zgodne.
 
@@ -56,7 +377,7 @@ Usługi i ich piny ustawia się w jednym pliku biblioteki: `src/EspCamFeatures.h
 - Biblioteka dołączona przez `symlink://` lub `lib_extra_dirs` jest wspólna dla wszystkich projektów, które z niej korzystają, więc zmiana w `EspCamFeatures.h` dotyczy ich wszystkich. Jeśli projekt potrzebuje innego zestawu usług, skopiuj bibliotekę do jego `lib/`.
 - `EspCamFeatures.h` sprawdza przy kompilacji kolizje pinów: z kamerą, z kartą SD, LED z serwem, pan z tilt oraz piny 34–39, które są tylko wejściami. Kolizja daje błąd `#error` z opisem.
 
-### Przydział pinów i kanałów LEDC (AI Thinker)
+#### Przydział pinów i kanałów LEDC (AI Thinker)
 
 | Zasób | Piny | LEDC |
 |---|---|---|
@@ -67,7 +388,7 @@ Usługi i ich piny ustawia się w jednym pliku biblioteki: `src/EspCamFeatures.h
 
 - Karta pracuje w trybie **1-bit**. W trybie 4-bit zajęłaby też GPIO 4, 12 i 13, czyli piny lampy i serw.
 
-### Kamera, lampa i serwa jednocześnie: timery i przerwania
+#### Kamera, lampa i serwa jednocześnie: timery i przerwania
 
 Kamera, lampa i serwa mogą działać jednocześnie, bez konfliktów. Sprawdziłem to w zainstalowanym kodzie (Arduino core 3.3.9, esp32-camera z ESP-IDF 5.5):
 - **Osobne timery.** ESP32 ma dwie niezależne grupy LEDC po 4 timery: high-speed i low-speed.
@@ -90,7 +411,7 @@ Kamera, lampa i serwa mogą działać jednocześnie, bez konfliktów. Sprawdził
 
 Ruszające serwo pobiera chwilowo nawet 0,5–1 A na sztukę. Na wspólnym zasilaniu powoduje to spadki napięcia, restarty („brownout”), paski i przekłamania obrazu oraz zrywanie WiFi.
 
-### Karta SD: interfejs SDMMC, nie SPI
+#### Karta SD: interfejs SDMMC, nie SPI
 
 `CamSdCard` korzysta ze sprzętowego kontrolera **SDMMC** przez bibliotekę `SD_MMC` z core. Nie używa biblioteki `SD` (`SD.h`), która działa przez **SPI**. SDMMC jest szybszy i nie zajmuje magistrali SPI. Tak jest też podłączone gniazdo microSD na płytce ESP32-CAM.
 
@@ -115,7 +436,7 @@ Wnioski:
 - Serwa zasilaj osobno z 5 V, nie z płytki.
 - Do serw nie używam biblioteki ESP32Servo, bo sama przydziela timery LEDC i koliduje z kamerą.
 
-## Serwery poleceń: COM i Telnet
+### Serwery poleceń: COM i Telnet
 
 Oba serwery są, tak jak strona WWW, dodatkami korzystającymi wyłącznie z `EspCamera`. Polecenia wykonuje wspólna klasa `CamCommands`, więc na COM i przez Telnet są identyczne.
 - Polecenia i odpowiedzi są po angielsku (tak samo strona WWW i logi na Serial), a wielkość liter w poleceniach nie ma znaczenia.
@@ -144,7 +465,7 @@ Oba serwery są, tak jak strona WWW, dodatkami korzystającymi wyłącznie z `Es
 | `restart yes` | – | restart płytki (wymaga potwierdzenia `yes`) |
 | `quit` / `exit` | – | rozłączenie (Telnet) |
 
-### Połączenie
+#### Połączenie
 
 - **COM:** `pio device monitor` (115200). Serwer korzysta z tego samego portu `Serial`, na który idą logi. Przy włączonym serwerze COM okresowy log FPS jest domyślnie wyłączony, żeby nie przerywał pisania. FPS pokazują polecenia `cam` i `status`. Serwer odsyła wpisywane znaki (echo) i obsługuje Backspace.
 - **Telnet:** `telnet esp32cam.local` albo `telnet <IP>`; na Windows np. PuTTY w trybie Telnet. Działa w trybie STA i AP.
@@ -167,18 +488,18 @@ Saved /photos/IMG_00012.jpg (48 KB)
 Goodbye.
 ```
 
-### Telnet: biblioteka i ograniczenia
+#### Telnet: biblioteka i ograniczenia
 
 - Core Arduino nie ma serwera telnet, jest tylko surowy `WiFiServer`. Dlatego `CamTelnetServer` używa gotowej biblioteki **ESPTelnet** (`lennarthennigs/ESP Telnet` 2.3.0, aktualizowana w 2026 r.). Kompiluje się z core 3.x bez ostrzeżeń.
 - Obsługiwany jest **jeden klient naraz**. Kolejne połączenie jest odrzucane, a na Serial pojawia się komunikat.
 - **Telnet nie szyfruje** niczego, także hasła `TELNET_PASSWORD`. Używaj go tylko w zaufanej sieci domowej.
 - ESPTelnet dołącza `ETH.h`, więc do programu trafia ok. 12 KB obsługi Ethernetu, nawet przy `TELNET_SERVER_ON 0`. Nie da się tego wyłączyć bez zmian w pakiecie frameworka. **Nie dodawaj `lib_ignore = Ethernet`:** pioarduino usuwa wtedy ścieżki Ethernetu we współdzielonym pakiecie frameworka, co psuje kompilację również innych projektów.
 
-### Wątki
+#### Wątki
 
 Polecenia COM i Telnet wykonują się w `loop()`, a strona WWW w zadaniach httpd. `EspCamera` chroni operacje zmieniające stan (sensor, lampa, serwa, zapis na SD) rekurencyjnym mutexem FreeRTOS. Dzięki temu można np. zrobić zdjęcie z Telnetu w trakcie oglądania strumienia.
 
-## Klasy
+### Klasy
 
 Każdej klasy można używać samodzielnie. Wszystko jest w przestrzeni nazw `espcamweb`, a jeden nagłówek `#include <EspCamWeb.h>` dołącza całość.
 
@@ -232,7 +553,7 @@ Inny moduł kamery: wypełnij własną strukturę `CameraPins` i przypisz ją do
 Zależności: `CamWebServer` / `CamComServer` / `CamTelnetServer` → `EspCamera` → `CamLed` / `CamSdCard` / `CamServos` (każdy opcjonalny). Serwery COM i Telnet korzystają z `CamCommands`. `CamWifi` jest niezależny.
 Moduły dołącza się do kamery przez referencję, a nie tworzy wewnątrz niej. Dzięki temu kamera działa bez nich, a każdą klasę można też używać samodzielnie.
 
-### Usługi w `EspCamera`
+#### Usługi w `EspCamera`
 
 | Usługa | Dołączenie | Metody |
 |---|---|---|
@@ -243,9 +564,9 @@ Moduły dołącza się do kamery przez referencję, a nie tworzy wewnątrz niej.
 
 Metody `attach…()` istnieją tylko wtedy, gdy moduł jest włączony. Pozostałe metody istnieją zawsze, a przy wyłączonym module zwracają `false`, 0 albo -1. Dzięki temu serwer nie potrzebuje żadnych `#if`.
 
-## Przykłady
+### Przykłady
 
-### Jawne użycie klas
+#### Jawne użycie klas
 
 ```cpp
 #include <EspCamWeb.h>
@@ -282,7 +603,7 @@ void loop() {
 }
 ```
 
-### Sama kamera, bez serwera
+#### Sama kamera, bez serwera
 
 ```cpp
 EspCamera camera;
@@ -293,11 +614,11 @@ camera.savePhotoToSd();               // gdy dołączona karta (SD_ON)
 camera.setPan(45);                    // gdy dołączone serwa (SERVO_MOTORS_ON)
 ```
 
-### Fasada
+#### Fasada
 
 Zobacz `examples/Basic/main.cpp`: konfiguracja, `cam.begin(config)` w `setup()` i `cam.loop()` w `loop()`. Fasada sama tworzy i dołącza moduły włączone w `EspCamFeatures.h`. Brak karty SD nie jest błędem: usługa po prostu nie jest dostępna.
 
-## Adresy HTTP
+### Adresy HTTP
 
 | Adres | Opis |
 |---|---|
