@@ -60,12 +60,35 @@ Usługi i ich piny ustawia się w jednym pliku biblioteki: `src/EspCamFeatures.h
 
 | Zasób | Piny | LEDC |
 |---|---|---|
-| Kamera | 0, 5, 18, 19, 21, 22, 23, 25, 26, 27, 32, 34, 35, 36, 39 (PSRAM: 16, 17) | kanał 0 / timer 0 (XCLK 20 MHz) |
-| Lampa LED | 4 | kanał 2 / timer 1 (5 kHz) |
+| Kamera | 0, 5, 18, 19, 21, 22, 23, 25, 26, 27, 32, 34, 35, 36, 39 (PSRAM: 16, 17) | grupa **low-speed**: kanał 0, timer 0 (XCLK 20 MHz, 1 bit) |
+| Lampa LED | 4 | grupa **high-speed**: kanał 2, timer 0 (5 kHz, 8 bitów) |
 | Karta SD (1-bit) | 2 (D0), 14 (CLK), 15 (CMD) | – |
-| Serwo pan / tilt | 12 / 13 | kanały 4 i 5 / timer 2 (50 Hz) |
+| Serwo pan / tilt | 12 / 13 | grupa **high-speed**: kanały 4 i 5, wspólny timer 1 (50 Hz, 14 bitów) |
 
 - Karta pracuje w trybie **1-bit**. W trybie 4-bit zajęłaby też GPIO 4, 12 i 13, czyli piny lampy i serw.
+
+### Kamera, lampa i serwa jednocześnie: timery i przerwania
+
+Kamera, lampa i serwa mogą działać jednocześnie, bez konfliktów. Sprawdziłem to w zainstalowanym kodzie (Arduino core 3.3.9, esp32-camera z ESP-IDF 5.5):
+- **Osobne timery.** ESP32 ma dwie niezależne grupy LEDC po 4 timery: high-speed i low-speed.
+  - Sterownik kamery (`xclk.c`, funkcja `xclk_timer_conf`) ustawia XCLK w grupie **low-speed** na timerze 0, z rozdzielczością 1 bit i częstotliwością 20 MHz.
+  - Arduino przydziela grupę jako `kanał / 8`, więc kanały 2, 4 i 5 trafiają do grupy **high-speed**.
+  - Core wybiera tam pierwszy wolny timer (`find_free_timer` w `esp32-hal-ledc.c`): lampa dostaje timer 0, a oba serwa (te same 50 Hz) wspólny timer 1.
+  - Zmiana jasności lampy ani ruch serw nie dotykają więc zegara kamery.
+- **Pułapka: kanały 8–15.** Należą do grupy low-speed. Core Arduino nie wie, że kamera zajęła tam timer 0, bo kamera ustawia go bezpośrednio przez ESP-IDF. Dlatego mógłby go przestawić, a kamera straciłaby zegar. `CamLed` i `CamServos` odrzucają kanały spoza 0–7 (stała `LEDC_SAFE_CHANNELS`) i wypisują błąd.
+- **Przerwania.**
+  - LEDC w naszym użyciu nie generuje przerwań: `ledcWrite` tylko zapisuje wypełnienie, a obsługa przerwania LEDC instaluje się dopiero przy `ledcFade`, którego nie używamy. Serwa trzymają pozycję sprzętowo, bez udziału procesora.
+  - Kamera korzysta z przerwania I2S/DMA i z przerwania GPIO na VSYNC (`ll_cam.c`).
+  - Karta SD ma przerwanie kontrolera SDMMC, a WiFi własne.
+  - To osobne źródła, które ESP-IDF przydziela niezależnie (`esp_intr_alloc`), więc nic się nie dzieli.
+- **Wątki.** Polecenia serw i lampy przychodzą z zadań serwera WWW oraz z `loop()` (COM/Telnet). `EspCamera` szereguje je rekurencyjnym mutexem. `capture()` nie jest blokowane, więc strumień nie czeka na serwa ani na zapis na kartę.
+
+**Zasilanie serw – to jest realne źródło problemów:**
+- serwa zasilaj z osobnego źródła 5 V (min. 1 A na dwa małe serwa), nie z pinu 5 V płytki,
+- masa serw i masa ESP32-CAM muszą być połączone (wspólna masa), inaczej sygnał sterujący nie działa,
+- przy serwach daj kondensator elektrolityczny 470–1000 µF na zasilaniu.
+
+Ruszające serwo pobiera chwilowo nawet 0,5–1 A na sztukę. Na wspólnym zasilaniu powoduje to spadki napięcia, restarty („brownout”), paski i przekłamania obrazu oraz zrywanie WiFi.
 
 ### Karta SD: interfejs SDMMC, nie SPI
 

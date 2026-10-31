@@ -14,6 +14,17 @@
 
 namespace espcamweb {
 
+/**
+ * @brief Number of Arduino LEDC channels usable for the lamp and servos (0..7).
+ *
+ * Arduino maps channel N to ESP32 speed group N / 8: channels 0-7 = high-speed group,
+ * 8-15 = low-speed group. The camera XCLK (esp32-camera, xclk.c) runs on low-speed timer 0,
+ * configured directly through ESP-IDF, so the Arduino core does not know it is taken and would
+ * reuse (retune) it for a channel 8-15 - the camera would lose its clock.
+ * Channels 0-7 use the separate high-speed timers and never touch the camera.
+ */
+inline constexpr uint8_t LEDC_SAFE_CHANNELS = 8;
+
 /// Camera sensor and frame buffer settings (EspCamera::begin()).
 struct CameraSettings {
   CameraPins pins = AI_THINKER_PINS;         ///< Sensor GPIO map.
@@ -41,7 +52,7 @@ struct WifiSettings {
 /// Flash LED settings (CamLed::begin()).
 struct LedSettings {
   int pin = LED_PIN;           ///< LED GPIO; -1 = lamp disabled at runtime (completely: LED_ON 0).
-  uint8_t channel = 2;         ///< LEDC channel; the camera uses channel 0 / timer 0 (XCLK).
+  uint8_t channel = 2;         ///< LEDC channel 0-7 (high-speed group; see LEDC_SAFE_CHANNELS).
   uint32_t freq = 5000;        ///< PWM frequency, Hz.
   uint8_t resolutionBits = 8;  ///< PWM resolution, bits.
   uint32_t dutyOn = 24;        ///< Duty when on - deliberately dim (full power dazzles and heats the LED).
@@ -57,7 +68,8 @@ struct SdSettings {
 };
 
 /// Pan/tilt servo settings (CamServos::begin()).
-/// LEDC channels 4 and 5 share timer 2 (50 Hz); camera: channel 0 / timer 0, lamp: channel 2 / timer 1.
+/// LEDC channels must be 0-7 (high-speed group, see LEDC_SAFE_CHANNELS). Both servos run at
+/// 50 Hz, so the core gives them one shared high-speed timer.
 struct ServoSettings {
   int panPin = SERVO_PAN_PIN;         ///< Horizontal servo GPIO.
   int tiltPin = SERVO_TILT_PIN;       ///< Vertical servo GPIO.

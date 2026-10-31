@@ -23,7 +23,7 @@ class CamServos {
   /**
    * @brief Configures both PWM channels and moves the servos to the start position.
    * @param settings Pins, LEDC channels, pulse widths, angle limits, start position, inversion.
-   * @return true if both PWM channels were configured.
+   * @return true if both PWM channels were configured; false also for a channel outside 0-7.
    */
   bool begin(const ServoSettings &settings);
 

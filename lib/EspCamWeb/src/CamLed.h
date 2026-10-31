@@ -13,14 +13,15 @@ namespace espcamweb {
 /**
  * @brief PWM-dimmed flash LED.
  *
- * Uses an explicit LEDC channel (default 2) so it never takes channel 0,
- * which generates the camera XCLK. Attach to EspCamera with EspCamera::attachLed().
+ * Uses an explicit LEDC channel 0-7 (default 2) in the high-speed group, which does not share
+ * timers with the camera XCLK (low-speed group). Attach to EspCamera with EspCamera::attachLed().
  */
 class CamLed {
  public:
   /**
    * @brief Configures the PWM output and switches the lamp off.
-   * @param settings Pin, LEDC channel, frequency, resolution and "on" duty. pin = -1 disables the lamp.
+   * @param settings Pin, LEDC channel, frequency, resolution and "on" duty. pin = -1 disables the lamp;
+   *                 a channel outside 0-7 is rejected (lamp disabled, error on Serial).
    */
   void begin(const LedSettings &settings);
 

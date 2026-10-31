@@ -16,6 +16,12 @@ static const uint32_t SERVO_PERIOD_US = 1000000 / SERVO_FREQ;  ///< PWM period, 
 
 bool CamServos::begin(const ServoSettings &settings) {
   s_ = settings;
+  if (s_.panChannel >= LEDC_SAFE_CHANNELS || s_.tiltChannel >= LEDC_SAFE_CHANNELS) {
+    // Channels 8-15 would reuse the camera's XCLK timer (see LEDC_SAFE_CHANNELS)
+    Serial.printf("Servos: LEDC channels must be 0-%u\n", LEDC_SAFE_CHANNELS - 1);
+    ready_ = false;
+    return false;
+  }
   ready_ = ledcAttachChannel(s_.panPin, SERVO_FREQ, SERVO_RES_BITS, s_.panChannel) &&
            ledcAttachChannel(s_.tiltPin, SERVO_FREQ, SERVO_RES_BITS, s_.tiltChannel);
   if (!ready_) {
