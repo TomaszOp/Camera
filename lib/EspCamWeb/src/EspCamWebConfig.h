@@ -33,7 +33,8 @@ struct CameraSettings {
   framesize_t frameSize = FRAMESIZE_VGA;     ///< Resolution after start-up.
   framesize_t maxFrameSize = FRAMESIZE_XGA;  ///< Buffers are allocated for this size (with PSRAM).
   int jpegQuality = 12;                      ///< JPEG quality 4..63, lower = better.
-  int fbCount = 2;                           ///< Number of frame buffers in PSRAM.
+  int fbCount = 3;                           ///< Number of frame buffers in PSRAM (3: two stream clients
+                                             ///< can each hold a frame while the camera fills the third).
   /// Resolution used without PSRAM (single frame buffer in DRAM).
   framesize_t noPsramFrameSize = FRAMESIZE_QVGA;
 };
@@ -107,6 +108,9 @@ struct ServoSettings {
 struct ServerSettings {
   uint16_t httpPort = 80;    ///< Page, /control, /status, /capture, /save.
   uint16_t streamPort = 81;  ///< /stream - separate httpd instance.
+  /// Max. simultaneous /stream clients (each served by its own task). When full, the oldest
+  /// stream is closed so a new viewer always gets a picture (e.g. a page left in the browser's cache).
+  uint8_t maxStreamClients = 3;
 };
 
 /// Serial command server settings (CamComServer::begin()).

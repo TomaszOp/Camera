@@ -245,7 +245,7 @@ The configuration is in `EspCamWebConfig.h`. Every structure has default values.
   - `frameSize`: VGA
   - `maxFrameSize`: XGA, the buffers are allocated for this size
   - `jpegQuality`: 12
-  - `fbCount`: 2
+  - `fbCount`: 3 (two stream clients can each hold a frame while the camera fills the third)
   - `noPsramFrameSize`: QVGA
 - **`WifiSettings`**:
   - `ssid`, `password`: `nullptr` means AP right away
@@ -265,7 +265,7 @@ The configuration is in `EspCamWebConfig.h`. Every structure has default values.
   - ranges `panMin`/`panMax`, `tiltMin`/`tiltMax`
   - start position `panStart`/`tiltStart`: 90°
   - reversed direction: `invertPan`, `invertTilt`
-- **`ServerSettings`**: `httpPort` 80, `streamPort` 81
+- **`ServerSettings`**: `httpPort` 80, `streamPort` 81, `maxStreamClients` 3 (each `/stream` client has its own task; when full, the oldest stream is closed)
 - **`ComServerSettings`**: `echo` (`true`), `prompt` (`"> "`)
 - **`TelnetSettings`**: `port` (`TELNET_PORT`), `password` (`TELNET_PASSWORD`)
 - **`EspCamWebConfig`**: all of the above plus `fpsLogIntervalMs` (5000, or 0 with `COM_SERVER_ON`, i.e. no periodic log)
@@ -361,11 +361,12 @@ See `examples/Basic/main.cpp`: configuration, `cam.begin(config)` in `setup()` a
 | `POST http://<IP>/photo/delete?name=IMG_00001.jpg` | delete a photo; JSON `{"ok","message"}` |
 | `http://<IP>/update` | firmware update page (`OTA_ON`, HTTP Basic Auth with `OTA_PASSWORD`) |
 | `POST http://<IP>/update` | raw `firmware.bin` body; streamed into the OTA slot, verified, then restart |
-| `http://<IP>:81/stream` | MJPEG stream (separate httpd instance) |
+| `http://<IP>:81/stream` | MJPEG stream (separate httpd instance; each client in its own task, max. 3, the oldest is closed when full) |
 
 Notes:
 - The page shows the lamp button, the SD card section and the servo controls (sliders, arrows, center) only when `/status` → `features` says the service is available.
 - `setFrameSize()` rejects a resolution larger than `maxFrameSize`, because the buffer would overflow. The page hides such buttons.
+- The page stops its stream when you leave it and restarts it when you come back (also with the browser's Back button); if no frame arrives for 5 s it reconnects by itself.
 - FPS is counted by `EspCamera` from the frames taken with `capture()`. The value is refreshed by `updateFps()`, which must be called in `loop()`; the facade does it by itself.
 
 ---
@@ -618,7 +619,7 @@ Konfiguracja jest w `EspCamWebConfig.h`. Każda struktura ma domyślne wartości
   - `frameSize`: VGA
   - `maxFrameSize`: XGA, na ten rozmiar alokowane są bufory
   - `jpegQuality`: 12
-  - `fbCount`: 2
+  - `fbCount`: 3 (dwóch klientów strumienia może trzymać po klatce, a kamera wypełnia trzecią)
   - `noPsramFrameSize`: QVGA
 - **`WifiSettings`**:
   - `ssid`, `password`: `nullptr` oznacza od razu AP
@@ -638,7 +639,7 @@ Konfiguracja jest w `EspCamWebConfig.h`. Każda struktura ma domyślne wartości
   - zakresy `panMin`/`panMax`, `tiltMin`/`tiltMax`
   - pozycja startowa `panStart`/`tiltStart`: 90°
   - odwrócenie kierunku: `invertPan`, `invertTilt`
-- **`ServerSettings`**: `httpPort` 80, `streamPort` 81
+- **`ServerSettings`**: `httpPort` 80, `streamPort` 81, `maxStreamClients` 3 (każdy klient `/stream` ma własne zadanie; gdy limit jest pełny, zamykany jest najstarszy strumień)
 - **`ComServerSettings`**: `echo` (`true`), `prompt` (`"> "`)
 - **`TelnetSettings`**: `port` (`TELNET_PORT`), `password` (`TELNET_PASSWORD`)
 - **`EspCamWebConfig`**: wszystkie powyższe plus `fpsLogIntervalMs` (5000, a przy `COM_SERVER_ON` 0, czyli bez okresowego logu)
@@ -734,9 +735,10 @@ Zobacz `examples/Basic/main.cpp`: konfiguracja, `cam.begin(config)` w `setup()` 
 | `POST http://<IP>/photo/delete?name=IMG_00001.jpg` | usunięcie zdjęcia; JSON `{"ok","message"}` |
 | `http://<IP>/update` | strona aktualizacji programu (`OTA_ON`, HTTP Basic Auth z `OTA_PASSWORD`) |
 | `POST http://<IP>/update` | surowy `firmware.bin` w treści; zapis do slotu OTA, weryfikacja, restart |
-| `http://<IP>:81/stream` | strumień MJPEG (osobna instancja httpd) |
+| `http://<IP>:81/stream` | strumień MJPEG (osobna instancja httpd; każdy klient we własnym zadaniu, maks. 3, przy komplecie zamykany jest najstarszy) |
 
 Uwagi:
 - Strona pokazuje przycisk lampy, sekcję karty SD i sterowanie serwami (suwaki, strzałki, środek) tylko wtedy, gdy `/status` → `features` mówi, że dana usługa jest dostępna.
 - `setFrameSize()` odrzuca rozdzielczość większą niż `maxFrameSize`, bo bufor by się przepełnił. Strona chowa takie przyciski.
+- Strona zatrzymuje swój strumień przy wyjściu i wznawia go po powrocie (także przyciskiem Wstecz przeglądarki). Jeśli przez 5 s nie dotrze żadna klatka, sama łączy się ponownie.
 - FPS liczy `EspCamera` na podstawie klatek pobranych przez `capture()`. Wartość odświeża `updateFps()`, które trzeba wywoływać w `loop()`; fasada robi to sama.

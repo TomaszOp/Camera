@@ -14,6 +14,7 @@
 #pragma once
 
 #include <atomic>
+#include <freertos/FreeRTOS.h>
 #include "esp_http_server.h"
 #include "EspCamWebConfig.h"
 
@@ -90,12 +91,33 @@ class CamWebServer {
   static esp_err_t saveHandler(httpd_req_t *req);
 
   /**
-   * @brief GET /stream - endless multipart/x-mixed-replace MJPEG stream; runs until the client
-   *        disconnects. Allows CORS so the page on the HTTP port can read it with fetch().
+   * @brief GET /stream - hands the request to its own FreeRTOS task (httpd async request), so the
+   *        httpd task stays free and several clients are streamed at the same time. When
+   *        ServerSettings::maxStreamClients streams are running, the oldest one is told to stop.
    * @param req Request.
-   * @return Error that ended the stream (normally a send failure on disconnect).
+   * @return ESP_OK when the stream task was started, otherwise an error.
    */
   static esp_err_t streamHandler(httpd_req_t *req);
+
+  /**
+   * @brief Task body of one stream client: endless multipart/x-mixed-replace MJPEG stream until the
+   *        client disconnects, the stream is kicked out (newer client) or an OTA update starts.
+   *        Allows CORS so the page on the HTTP port can read it with fetch().
+   * @param arg Async copy of the request (httpd_req_t*); completed and the task deleted at the end.
+   */
+  static void streamTask(void *arg);
+
+  /**
+   * @brief Reserves a stream slot, evicting the oldest stream when all slots are taken.
+   * @return Id of the new stream (never 0).
+   */
+  uint32_t claimStreamSlot();
+
+  /// @brief Frees the slot of a finished stream. @param id Stream id from claimStreamSlot().
+  void releaseStreamSlot(uint32_t id);
+
+  /// @return true if the stream @p id must stop (evicted by a newer client). @param id Stream id.
+  bool streamEvicted(uint32_t id) const { return kickId_ == id; }
 
 #if WIFI_SETTINGS_ON
   /**
@@ -183,6 +205,11 @@ class CamWebServer {
   httpd_handle_t webHttpd_ = nullptr;      ///< httpd instance for the page and API.
   httpd_handle_t streamHttpd_ = nullptr;   ///< httpd instance for /stream.
   std::atomic<uint8_t> streamClients_{0};  ///< Active /stream connections.
+  static const uint8_t MAX_STREAM_SLOTS = 4;   ///< Upper bound for ServerSettings::maxStreamClients.
+  uint32_t streamSlots_[MAX_STREAM_SLOTS] = {};  ///< Ids of running streams, 0 = free slot.
+  uint32_t nextStreamId_ = 0;                 ///< Last assigned stream id.
+  std::atomic<uint32_t> kickId_{0};           ///< Id of the stream asked to stop (oldest, when full).
+  portMUX_TYPE slotsLock_ = portMUX_INITIALIZER_UNLOCKED;  ///< Guards streamSlots_ and nextStreamId_.
 };
 
 }  // namespace espcamweb

@@ -71,9 +71,12 @@ bool CamWebServer::begin(const ServerSettings &settings) {
   }
   for (const httpd_uri_t &uri : uris) httpd_register_uri_handler(webHttpd_, &uri);
 
-  // Separate instance: the stream blocks its task, so it cannot share it with the page
+  // Separate instance for /stream; each stream runs in its own task (see streamHandler)
   config.server_port = settings_.streamPort;
   config.ctrl_port += 1;
+  config.max_uri_handlers = 2;
+  config.send_wait_timeout = 2;  // drop a client that stopped reading within 2 s
+  config.recv_wait_timeout = 2;
   const httpd_uri_t streamUri = {"/stream", HTTP_GET, streamHandler, this};
   if (httpd_start(&streamHttpd_, &config) != ESP_OK) {
     Serial.printf("Failed to start the stream server on port %u\n", settings_.streamPort);
@@ -196,26 +199,71 @@ esp_err_t CamWebServer::controlHandler(httpd_req_t *req) {
   return httpd_resp_send(req, nullptr, 0);
 }
 
+uint32_t CamWebServer::claimStreamSlot() {
+  uint8_t limit = settings_.maxStreamClients;
+  if (limit < 1) limit = 1;
+  if (limit > MAX_STREAM_SLOTS) limit = MAX_STREAM_SLOTS;
+
+  portENTER_CRITICAL(&slotsLock_);
+  uint32_t id = ++nextStreamId_;
+  if (id == 0) id = ++nextStreamId_;  // 0 means "free"
+  int freeSlot = -1, oldest = -1;
+  for (int i = 0; i < limit; i++) {
+    if (!streamSlots_[i]) {
+      if (freeSlot < 0) freeSlot = i;
+    } else if (oldest < 0 || streamSlots_[i] < streamSlots_[oldest]) {
+      oldest = i;
+    }
+  }
+  if (freeSlot < 0) {
+    // All slots busy: ask the oldest stream to stop and take its slot over
+    kickId_ = streamSlots_[oldest];
+    freeSlot = oldest;
+  }
+  streamSlots_[freeSlot] = id;
+  portEXIT_CRITICAL(&slotsLock_);
+  return id;
+}
+
+void CamWebServer::releaseStreamSlot(uint32_t id) {
+  portENTER_CRITICAL(&slotsLock_);
+  for (uint8_t i = 0; i < MAX_STREAM_SLOTS; i++) {
+    if (streamSlots_[i] == id) streamSlots_[i] = 0;
+  }
+  portEXIT_CRITICAL(&slotsLock_);
+}
+
 esp_err_t CamWebServer::streamHandler(httpd_req_t *req) {
+  // Serve the stream in its own task so the httpd task is never blocked by a running stream
+  httpd_req_t *copy = nullptr;
+  esp_err_t err = httpd_req_async_handler_begin(req, &copy);
+  if (err != ESP_OK) return err;
+  if (xTaskCreate(streamTask, "cam_stream", 4096, copy, tskIDLE_PRIORITY + 5, nullptr) != pdPASS) {
+    Serial.println("Stream: cannot start a task");
+    httpd_resp_send_500(copy);
+    httpd_req_async_handler_complete(copy);
+    return ESP_FAIL;
+  }
+  return ESP_OK;
+}
+
+void CamWebServer::streamTask(void *arg) {
+  httpd_req_t *req = static_cast<httpd_req_t *>(arg);
   CamWebServer *srv = self(req);
   EspCamera &cam = srv->camera_;
+  uint32_t id = srv->claimStreamSlot();
   char part[64];
+
   esp_err_t res = httpd_resp_set_type(req, STREAM_CONTENT_TYPE);
-  if (res != ESP_OK) return res;
   httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
   httpd_resp_set_hdr(req, "Cache-Control", "no-store");
-
   Serial.printf("Stream: client connected (%u)\n", (unsigned)++srv->streamClients_);
 
-  while (true) {
-    if (cam.otaInProgress()) {  // free bandwidth and CPU for the firmware update
-      res = ESP_FAIL;
-      break;
-    }
+  while (res == ESP_OK) {
+    if (cam.otaInProgress() || srv->streamEvicted(id)) break;  // OTA update, or a newer client took the slot
     camera_fb_t *fb = cam.capture();
     if (!fb) {
       Serial.println("Frame capture failed");
-      res = ESP_FAIL;
       break;
     }
     size_t hlen = snprintf(part, sizeof(part), STREAM_PART, fb->len);
@@ -223,11 +271,14 @@ esp_err_t CamWebServer::streamHandler(httpd_req_t *req) {
     if (res == ESP_OK) res = httpd_resp_send_chunk(req, part, hlen);
     if (res == ESP_OK) res = httpd_resp_send_chunk(req, (const char *)fb->buf, fb->len);
     cam.release(fb);
-    if (res != ESP_OK) break;
   }
 
+  srv->releaseStreamSlot(id);
   Serial.printf("Stream: client disconnected (%u)\n", (unsigned)--srv->streamClients_);
-  return res;
+  // Close the socket (an evicted or broken stream must not linger) and finish the async request
+  httpd_sess_trigger_close(srv->streamHttpd_, httpd_req_to_sockfd(req));
+  httpd_req_async_handler_complete(req);
+  vTaskDelete(nullptr);
 }
 
 #if WIFI_SETTINGS_ON || OTA_ON || SD_ON

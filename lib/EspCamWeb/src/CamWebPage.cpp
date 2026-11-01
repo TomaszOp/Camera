@@ -98,13 +98,34 @@ let frames = 0;
 function ctl(v, val) { return fetch(`/control?var=${v}&val=${val}`).then(refresh); }
 
 // The stream is read with fetch() so the browser can count frames.
-// If fetch/ReadableStream is not supported, fall back to a plain <img src>.
+// If ReadableStream is not supported, fall back to a plain <img src>.
+// The stream is stopped when the page is left (pagehide) and restarted when it is shown again
+// (pageshow, e.g. Back from the browser cache); a stalled or dropped stream reconnects by itself.
+let ctrl = null, lastFrame = 0, retryTimer = null, prevUrl = null, useImg = false;
+
+function stopStream() {
+  clearTimeout(retryTimer);
+  if (ctrl) { ctrl.abort(); ctrl = null; }
+  if (useImg) $('cam').removeAttribute('src');
+}
+
+function retry(ms) {
+  clearTimeout(retryTimer);
+  retryTimer = setTimeout(startStream, ms);
+}
+
 async function startStream() {
+  if (!streamUrl) return;
+  stopStream();
   const img = $('cam');
+  if (useImg) { img.src = streamUrl + '?t=' + Date.now(); return; }
+  const my = ctrl = new AbortController();
+  lastFrame = performance.now();
   try {
-    const res = await fetch(streamUrl);
+    const res = await fetch(streamUrl, { signal: my.signal, cache: 'no-store' });
+    if (!res.ok || !res.body) throw new Error('HTTP ' + res.status);
     const reader = res.body.getReader();
-    let buf = new Uint8Array(0), prevUrl = null;
+    let buf = new Uint8Array(0);
     const dec = new TextDecoder();
     const find = (a, seq, from) => {
       outer: for (let i = from; i <= a.length - seq.length; i++) {
@@ -131,16 +152,24 @@ async function startStream() {
         if (prevUrl) URL.revokeObjectURL(prevUrl);
         prevUrl = url;
         frames++;
+        lastFrame = performance.now();
         buf = buf.subarray(start + len);
       }
     }
   } catch (e) {
-    console.warn('fetch stream unavailable, using <img>', e);
-    img.src = streamUrl;
-    return;
+    if (my.signal.aborted) return;  // stopped on purpose (page left or restart)
+    if (typeof ReadableStream === 'undefined') { useImg = true; return startStream(); }
+    console.warn('stream error, reconnecting', e);
   }
-  setTimeout(startStream, 1000);  // stream dropped - retry
+  if (ctrl === my) { ctrl = null; retry(1000); }  // stream dropped - reconnect
 }
+
+// Watchdog: no frame for 5 s while visible -> reconnect
+setInterval(() => {
+  if (!useImg && streamUrl && !document.hidden && performance.now() - lastFrame > 5000) startStream();
+}, 1000);
+window.addEventListener('pagehide', stopStream);
+window.addEventListener('pageshow', e => { if (e.persisted) startStream(); });
 
 let last = performance.now();
 setInterval(() => {
