@@ -17,6 +17,13 @@ extern const char INDEX_HTML[] PROGMEM;
 /// Length of INDEX_HTML in bytes, without the terminating NUL.
 extern const size_t INDEX_HTML_LEN;
 
+#if SD_ON
+/// HTML of the SD card photo browser (/photos).
+extern const char PHOTOS_HTML[] PROGMEM;
+/// Length of PHOTOS_HTML in bytes, without the terminating NUL.
+extern const size_t PHOTOS_HTML_LEN;
+#endif
+
 #if OTA_ON
 /// HTML of the firmware update page (/update).
 extern const char UPDATE_HTML[] PROGMEM;

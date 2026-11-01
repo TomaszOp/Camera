@@ -12,6 +12,9 @@
 
 #include "CamWebPage.h"
 #include "EspCamera.h"
+#if SD_ON
+#include "CamSdCard.h"
+#endif
 
 namespace espcamweb {
 
@@ -36,7 +39,7 @@ bool CamWebServer::begin(const ServerSettings &settings) {
 
   httpd_config_t config = HTTPD_DEFAULT_CONFIG();
   config.server_port = settings_.httpPort;
-  config.max_uri_handlers = 12;
+  config.max_uri_handlers = 16;
   config.lru_purge_enable = true;
 
   const httpd_uri_t uris[] = {
@@ -50,6 +53,12 @@ bool CamWebServer::begin(const ServerSettings &settings) {
       {"/wifi/settings", HTTP_GET, wifiSettingsHandler, this},
       {"/wifi/save", HTTP_POST, wifiSaveHandler, this},
       {"/wifi/clear", HTTP_POST, wifiClearHandler, this},
+#endif
+#if SD_ON
+      {"/photos", HTTP_GET, photosPageHandler, this},
+      {"/photos/list", HTTP_GET, photosListHandler, this},
+      {"/photo", HTTP_GET, photoHandler, this},
+      {"/photo/delete", HTTP_POST, photoDeleteHandler, this},
 #endif
 #if OTA_ON
       {"/update", HTTP_GET, updatePageHandler, this},
@@ -221,7 +230,7 @@ esp_err_t CamWebServer::streamHandler(httpd_req_t *req) {
   return res;
 }
 
-#if WIFI_SETTINGS_ON || OTA_ON
+#if WIFI_SETTINGS_ON || OTA_ON || SD_ON
 /**
  * @brief Escapes a string for use inside a JSON string literal (quotes, backslash, control characters).
  * @param in Raw text (e.g. an SSID, which may contain any characters).
@@ -246,24 +255,7 @@ static String jsonEscape(const String &in) {
   return out;
 }
 
-/**
- * @brief Sends a small JSON reply {"ok":..,"message":".."} with an HTTP status.
- * @param req     Request.
- * @param status  HTTP status line, e.g. "200 OK".
- * @param ok      Value of the "ok" field.
- * @param message Message for the user (escaped here).
- * @return Result of httpd_resp_sendstr().
- */
-static esp_err_t sendResult(httpd_req_t *req, const char *status, bool ok, const String &message) {
-  httpd_resp_set_status(req, status);
-  httpd_resp_set_type(req, "application/json");
-  httpd_resp_set_hdr(req, "Cache-Control", "no-store");
-  String json = String("{\"ok\":") + (ok ? "true" : "false") + ",\"message\":\"" + jsonEscape(message) + "\"}";
-  return httpd_resp_sendstr(req, json.c_str());
-}
-#endif
-
-#if WIFI_SETTINGS_ON
+#if WIFI_SETTINGS_ON || SD_ON
 /**
  * @brief Decodes an application/x-www-form-urlencoded value ("+" = space, %XX = byte).
  * @param in Encoded value.
@@ -284,7 +276,26 @@ static String urlDecode(const char *in) {
   }
   return out;
 }
+#endif
 
+/**
+ * @brief Sends a small JSON reply {"ok":..,"message":".."} with an HTTP status.
+ * @param req     Request.
+ * @param status  HTTP status line, e.g. "200 OK".
+ * @param ok      Value of the "ok" field.
+ * @param message Message for the user (escaped here).
+ * @return Result of httpd_resp_sendstr().
+ */
+static esp_err_t sendResult(httpd_req_t *req, const char *status, bool ok, const String &message) {
+  httpd_resp_set_status(req, status);
+  httpd_resp_set_type(req, "application/json");
+  httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+  String json = String("{\"ok\":") + (ok ? "true" : "false") + ",\"message\":\"" + jsonEscape(message) + "\"}";
+  return httpd_resp_sendstr(req, json.c_str());
+}
+#endif
+
+#if WIFI_SETTINGS_ON
 esp_err_t CamWebServer::wifiPageHandler(httpd_req_t *req) {
   httpd_resp_set_type(req, "text/html; charset=utf-8");
   return httpd_resp_send(req, WIFI_HTML, WIFI_HTML_LEN);
@@ -425,6 +436,96 @@ esp_err_t CamWebServer::updateUploadHandler(httpd_req_t *req) {
   delay(500);  // let the reply reach the browser
   ESP.restart();
   return ESP_OK;
+}
+#endif
+
+#if SD_ON
+/// Photos per page in /photos and /photos/list.
+static const uint32_t PHOTOS_PER_PAGE = 100;
+
+/**
+ * @brief Reads one query parameter, URL-decoded.
+ * @param req  Request.
+ * @param key  Parameter name.
+ * @param[out] value Decoded value.
+ * @return true if the parameter is present.
+ */
+static bool queryParam(httpd_req_t *req, const char *key, String &value) {
+  char query[200], raw[150];
+  if (httpd_req_get_url_query_str(req, query, sizeof(query)) != ESP_OK) return false;
+  if (httpd_query_key_value(query, key, raw, sizeof(raw)) != ESP_OK) return false;
+  value = urlDecode(raw);
+  return true;
+}
+
+esp_err_t CamWebServer::photosPageHandler(httpd_req_t *req) {
+  httpd_resp_set_type(req, "text/html; charset=utf-8");
+  return httpd_resp_send(req, PHOTOS_HTML, PHOTOS_HTML_LEN);
+}
+
+esp_err_t CamWebServer::photosListHandler(httpd_req_t *req) {
+  EspCamera &cam = self(req)->camera_;
+  if (!cam.hasSd()) return sendResult(req, "503 Service Unavailable", false, "no SD card");
+  String p;
+  long page = queryParam(req, "page", p) ? p.toInt() : 1;
+  if (page < 1) page = 1;
+
+  // Send the JSON in chunks while listing - only one page (max. 100 entries) is ever in memory
+  httpd_resp_set_type(req, "application/json");
+  httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+  httpd_resp_sendstr_chunk(req, "{\"items\":[");
+  bool first = true;
+  uint32_t total = cam.sdListPhotoPage(page, PHOTOS_PER_PAGE, [&](const String &name, uint32_t size) {
+    String item = first ? "{" : ",{";
+    first = false;
+    item += "\"name\":\"" + jsonEscape(name) + "\",\"size\":" + String(size) + "}";
+    httpd_resp_sendstr_chunk(req, item.c_str());
+  });
+  uint32_t pages = (total + PHOTOS_PER_PAGE - 1) / PHOTOS_PER_PAGE;
+  char tail[96];
+  snprintf(tail, sizeof(tail), "],\"total\":%u,\"page\":%ld,\"pages\":%u,\"perPage\":%u}", (unsigned)total,
+           page, (unsigned)pages, (unsigned)PHOTOS_PER_PAGE);
+  httpd_resp_sendstr_chunk(req, tail);
+  return httpd_resp_sendstr_chunk(req, nullptr);
+}
+
+esp_err_t CamWebServer::photoHandler(httpd_req_t *req) {
+  EspCamera &cam = self(req)->camera_;
+  if (!cam.hasSd()) {
+    httpd_resp_set_status(req, "503 Service Unavailable");
+    return httpd_resp_sendstr(req, "No SD card");
+  }
+  String name;
+  if (!queryParam(req, "name", name) || !CamSdCard::isValidName(name)) {
+    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "invalid file name");
+    return ESP_FAIL;
+  }
+  bool headerSent = false;
+  // Stream from the card in 4 KB chunks; the file is never loaded whole into RAM
+  bool ok = cam.sdReadPhoto(name, [&](const uint8_t *data, size_t len) {
+    if (!headerSent) {
+      httpd_resp_set_type(req, "image/jpeg");
+      httpd_resp_set_hdr(req, "Cache-Control", "max-age=3600");
+      headerSent = true;
+    }
+    return httpd_resp_send_chunk(req, (const char *)data, len) == ESP_OK;
+  });
+  if (!headerSent) {
+    httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "photo not found");
+    return ESP_FAIL;
+  }
+  if (!ok) return ESP_FAIL;  // connection dropped mid-file
+  return httpd_resp_send_chunk(req, nullptr, 0);
+}
+
+esp_err_t CamWebServer::photoDeleteHandler(httpd_req_t *req) {
+  EspCamera &cam = self(req)->camera_;
+  if (!cam.hasSd()) return sendResult(req, "503 Service Unavailable", false, "no SD card");
+  String name;
+  if (!queryParam(req, "name", name)) return sendResult(req, "400 Bad Request", false, "missing file name");
+  const char *err = cam.sdDeletePhoto(name);
+  if (err) return sendResult(req, "400 Bad Request", false, err);
+  return sendResult(req, "200 OK", true, "Deleted " + name);
 }
 #endif
 

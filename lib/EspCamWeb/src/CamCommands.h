@@ -80,12 +80,13 @@ class CamCommands {
   /// @brief "photo" - saves a photo to SD, or reports the frame size without a card. @param out Output.
   void photo(Print &out);
   /**
-   * @brief "sd [list [N]]" - card state or the last N photos.
-   * @param args Arguments after "sd".
+   * @brief "sd [list [N] | delete <name>]" - card state, the last N photos, or delete a photo.
+   * @param args Lower-case arguments after "sd".
+   * @param raw  The same arguments in their original case (file name).
    * @param n    Number of arguments.
    * @param out  Output.
    */
-  void sd(const String *args, int n, Print &out);
+  void sd(const String *args, const String *raw, int n, Print &out);
   /**
    * @brief "cam [res X | quality N | flip on|off | mirror on|off]" - changes or shows image settings.
    * @param args Arguments after "cam".

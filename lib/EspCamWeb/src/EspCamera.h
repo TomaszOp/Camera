@@ -10,6 +10,7 @@
 
 #include <Arduino.h>
 #include <atomic>
+#include <functional>
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 #include "EspCamWebConfig.h"
@@ -187,6 +188,30 @@ class EspCamera {
    * @return Number of entries printed (0 without a card).
    */
   uint32_t sdListPhotos(Print &out, uint32_t maxCount) const;
+  /**
+   * @brief Lists one page of photos on the card, newest first (see CamSdCard::listPage()).
+   * @param page    Page number, 1-based.
+   * @param perPage Entries per page.
+   * @param fn      Called with the file name and size of each entry.
+   * @return Total number of photos (0 without a card).
+   */
+  uint32_t sdListPhotoPage(uint32_t page, uint32_t perPage,
+                           const std::function<void(const String &, uint32_t)> &fn);
+  /**
+   * @brief Streams a photo from the card in chunks.
+   * @param name File name in the photo directory (validated).
+   * @param sink Receives each chunk; return false to stop.
+   * @param[out] size Optional: file size.
+   * @return false without a card, for an invalid/missing file or when the sink stopped.
+   */
+  bool sdReadPhoto(const String &name, const std::function<bool(const uint8_t *, size_t)> &sink,
+                   size_t *size = nullptr) const;
+  /**
+   * @brief Deletes a photo from the card.
+   * @param name File name in the photo directory (validated).
+   * @return nullptr on success, otherwise an English error message.
+   */
+  const char *sdDeletePhoto(const String &name);
   /// @return Number of photos on the card (0 without a card).
   uint32_t sdPhotoCount() const;
   /// @return Free space on the card in bytes (0 without a card).

@@ -91,6 +91,7 @@ The third way is still USB/serial (`pio run -t upload`, see above).
 - Photo to the SD card: `http://<IP>/save`
 - WiFi settings: `http://<IP>/wifi`
 - Firmware update: `http://<IP>/update`
+- Photos on the SD card: `http://<IP>/photos` (link “Browse photos” in the SD card section) - 100 per page, newest first, Previous/Next; click a name to open the photo in a new tab, “Delete” removes it after confirmation
 
 The page, the COM/Telnet commands and the Serial logs are in English. The page shows two FPS counters: **browser** (frames actually received by the browser) and **server** (frames sent by the ESP32).
 
@@ -101,7 +102,7 @@ Connect with `pio device monitor` or `telnet esp32cam.local` and type `help`. Th
 - `led on|off|toggle`: lamp,
 - `servo`, `servo pan N`, `servo tilt N`, `servo N M`, `servo left|right|up|down [step]`, `servo center`: servos,
 - `photo`: photo to the SD card,
-- `sd`, `sd list [N]`: card state and recent photos,
+- `sd`, `sd list [N]`, `sd delete <name>`: card state, recent photos, delete a photo,
 - `cam`, `cam res vga`, `cam quality 15`: image settings,
 - `wifi`: network state and saved settings,
 - `wifi set sta <ssid> [password]`, `wifi set ap <ssid> [password]`, `wifi clear yes`: change or erase the saved WiFi settings (use "quotes" for spaces; restart to apply),
@@ -218,6 +219,7 @@ Trzeci sposób to nadal USB/UART (`pio run -t upload`, opis wyżej).
 - Zdjęcie na kartę SD: `http://<IP>/save`
 - Ustawienia WiFi: `http://<IP>/wifi`
 - Aktualizacja programu: `http://<IP>/update`
+- Zdjęcia z karty SD: `http://<IP>/photos` (link „Browse photos” w sekcji karty SD). Pokazuje 100 zdjęć na stronę, od najnowszych, z przyciskami Previous/Next. Kliknięcie nazwy otwiera zdjęcie w nowej karcie, a „Delete” usuwa je po potwierdzeniu.
 
 Strona, polecenia COM/Telnet i logi na Serial są po angielsku. Na stronie widać dwa liczniki FPS: **browser** (klatki faktycznie odebrane przez przeglądarkę) i **server** (klatki wysłane przez ESP32).
 
@@ -228,7 +230,7 @@ Połącz się przez `pio device monitor` albo `telnet esp32cam.local` i wpisz `h
 - `led on|off|toggle`: lampa,
 - `servo`, `servo pan N`, `servo tilt N`, `servo N M`, `servo left|right|up|down [krok]`, `servo center`: serwa,
 - `photo`: zdjęcie na kartę SD,
-- `sd`, `sd list [N]`: stan karty i ostatnie zdjęcia,
+- `sd`, `sd list [N]`, `sd delete <nazwa>`: stan karty, ostatnie zdjęcia, usunięcie zdjęcia,
 - `cam`, `cam res vga`, `cam quality 15`: ustawienia obrazu,
 - `wifi`: stan sieci i zapisane ustawienia,
 - `wifi set sta <ssid> [hasło]`, `wifi set ap <ssid> [hasło]`, `wifi clear yes`: zmiana lub skasowanie zapisanych ustawień WiFi (spacje w „cudzysłowie”; działa po restarcie),

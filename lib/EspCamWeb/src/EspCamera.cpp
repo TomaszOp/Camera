@@ -158,6 +158,20 @@ String EspCamera::sdLastPhoto() const { return hasSd() ? sd_->lastPhoto() : Stri
 uint32_t EspCamera::sdListPhotos(Print &out, uint32_t maxCount) const {
   return hasSd() ? sd_->listPhotos(out, maxCount) : 0;
 }
+uint32_t EspCamera::sdListPhotoPage(uint32_t page, uint32_t perPage,
+                                    const std::function<void(const String &, uint32_t)> &fn) {
+  ECW_LOCK;  // directory scan: serialised with saving and deleting
+  return hasSd() ? sd_->listPage(page, perPage, fn) : 0;
+}
+bool EspCamera::sdReadPhoto(const String &name, const std::function<bool(const uint8_t *, size_t)> &sink,
+                            size_t *size) const {
+  // Not locked: FATFS is re-entrant, and a slow download must not block lamp/servo commands
+  return hasSd() && sd_->readPhoto(name, sink, size);
+}
+const char *EspCamera::sdDeletePhoto(const String &name) {
+  ECW_LOCK;
+  return hasSd() ? sd_->deletePhoto(name) : "no SD card";
+}
 String EspCamera::savePhotoToSd(size_t *bytes) {
   ECW_LOCK;
   if (!hasSd()) return String();
@@ -176,6 +190,13 @@ uint64_t EspCamera::sdFreeBytes() const { return 0; }
 String EspCamera::sdLastPhoto() const { return String(); }
 String EspCamera::savePhotoToSd(size_t *) { return String(); }
 uint32_t EspCamera::sdListPhotos(Print &, uint32_t) const { return 0; }
+uint32_t EspCamera::sdListPhotoPage(uint32_t, uint32_t, const std::function<void(const String &, uint32_t)> &) {
+  return 0;
+}
+bool EspCamera::sdReadPhoto(const String &, const std::function<bool(const uint8_t *, size_t)> &, size_t *) const {
+  return false;
+}
+const char *EspCamera::sdDeletePhoto(const String &) { return "no SD card"; }
 #endif
 
 // ---------- Servos ----------

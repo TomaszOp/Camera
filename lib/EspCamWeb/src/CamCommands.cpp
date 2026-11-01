@@ -69,7 +69,7 @@ CamCommands::Result CamCommands::execute(const String &line, Print &out) {
   else if (cmd == "servo") servo(args + 1, n - 1, out);
   else if (cmd == "photo") photo(out);
   else if (cmd == "ota") ota(out);
-  else if (cmd == "sd") sd(args + 1, n - 1, out);
+  else if (cmd == "sd") sd(args + 1, raw + 1, n - 1, out);
   else if (cmd == "cam") cam(args + 1, n - 1, out);
   else if (cmd == "restart") restart(args[1], out);
   else if (cmd == "quit" || cmd == "exit") return Result::Quit;
@@ -103,7 +103,8 @@ void CamCommands::help(Print &out) {
   }
   if (f.sd) {
     out.print("  sd                        SD card state\r\n"
-              "  sd list [N]               last N photos (default 10)\r\n");
+              "  sd list [N]               last N photos (default 10)\r\n"
+              "  sd delete <name>          delete a photo, e.g. sd delete IMG_00012.jpg\r\n");
   }
   if (f.ota) {
     out.print("  ota                       firmware update state (OTA)\r\n");
@@ -269,7 +270,7 @@ void CamCommands::photo(Print &out) {
   camera_.release(fb);
 }
 
-void CamCommands::sd(const String *args, int n, Print &out) {
+void CamCommands::sd(const String *args, const String *raw, int n, Print &out) {
   if (!camera_.hasSd()) return unavailable(out, "SD card");
   if (n == 0) {
     String last = camera_.sdLastPhoto();
@@ -279,8 +280,12 @@ void CamCommands::sd(const String *args, int n, Print &out) {
     int count = n >= 2 ? args[1].toInt() : 10;
     if (count <= 0) count = 10;
     if (!camera_.sdListPhotos(out, count)) out.print("No photos on the card\r\n");
+  } else if (args[0] == "delete" && n >= 2) {
+    const char *err = camera_.sdDeletePhoto(raw[1]);
+    if (err) out.printf("Not deleted: %s\r\n", err);
+    else out.printf("Deleted %s\r\n", raw[1].c_str());
   } else {
-    out.print("Usage: sd [list [N]]\r\n");
+    out.print("Usage: sd [list [N] | delete <name>]\r\n");
   }
 }
 

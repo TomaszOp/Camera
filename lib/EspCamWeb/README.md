@@ -116,6 +116,7 @@ Conclusions:
 - The microSD slot on the ESP32-CAM AI Thinker is wired to exactly these pins, together with the pull-up resistors.
 - Your own SD slot on another classic ESP32 board must be connected to exactly these pins, with 10 kΩ pull-ups on CMD and D0–D3. A card on other pins would need SPI and a separate class based on `SD.h`.
 - The card must be formatted as **FAT32** and inserted **before power-up**. `begin()` detects it only at start-up.
+- **Photo browser** (`/photos`): one pass over the directory keeps only the number and size of each `.jpg/.jpeg` file (names only for files not named `IMG_nnnnn.jpg`), sorts newest first and sends just the requested page of 100 as chunked JSON. Photos are streamed from the card in 4 KB chunks, never loaded whole into RAM. File names are validated for opening and deleting (plain name in the photo directory, no `/`, `\` or `..`, `.jpg/.jpeg` only). Listing and deleting go through the `EspCamera` mutex; reading does not (FATFS is re-entrant), so a slow download never blocks other commands, and none of it blocks the stream. No login - anyone on the local network can delete photos.
 - On the ESP32-S3 the SDMMC pins can be chosen freely (`SD_MMC.setPins()`), but this library does not support that yet.
 - GPIO2 must be low or floating while flashing firmware. A card in the slot sometimes interferes with this. If flashing fails, remove the card for that time.
 - **GPIO12 is a strapping pin** that sets the flash memory voltage at boot (low = 3.3 V, correct). This normally works as is: GPIO12 has an internal pull-down and the input of a typical servo (SG90, MG90S) does not pull the line high. If the board still does not boot with a servo connected, add a **10 kΩ resistor between GPIO12 and GND**. It forces the low level at boot and does not affect servo control. Permanent but **irreversible** fix: `espefuse.py set_flash_voltage 3.3V` burns the flash voltage into eFuse, and GPIO12 is no longer a strapping pin.
@@ -151,6 +152,7 @@ Both servers are, like the web page, front-ends that use only `EspCamera`. Comma
 | `servo center` | servos | center position |
 | `sd` | SD | number of photos, free MB, last photo |
 | `sd list [N]` | SD | last N photos (default 10) with sizes |
+| `sd delete <name>` | SD | delete a photo, e.g. `sd delete IMG_00012.jpg` (plain .jpg/.jpeg name only) |
 | `ota` | OTA | OTA state: password set, running partition, next slot and its size |
 | `restart yes` | – | restart the board (requires the `yes` confirmation) |
 | `quit` / `exit` | – | disconnect (Telnet) |
@@ -279,7 +281,7 @@ Modules are attached to the camera by reference rather than created inside it. T
 |---|---|---|
 | all | – | `features()` returns `{led, sd, servos, settings, ota}`: enabled in `EspCamFeatures.h` **and** started successfully (e.g. card inserted) |
 | lamp | `attachLed(CamLed&)` | `hasLed()`, `setLed(bool)`, `ledOn()` |
-| SD card | `attachSd(CamSdCard&)` | `hasSd()`, `savePhotoToSd(&bytes)` (returns the file path), `sdPhotoCount()`, `sdFreeBytes()`, `sdLastPhoto()`, `sdListPhotos(Print&, N)` |
+| SD card | `attachSd(CamSdCard&)` | `hasSd()`, `savePhotoToSd(&bytes)` (returns the file path), `sdPhotoCount()`, `sdFreeBytes()`, `sdLastPhoto()`, `sdListPhotos(Print&, N)`, `sdListPhotoPage(page, perPage, fn)`, `sdReadPhoto(name, sink)`, `sdDeletePhoto(name)` |
 | servos | `attachServos(CamServos&)` | `hasServos()`, `setPan(deg)`, `setTilt(deg)`, `centerServos()`, `pan()`, `tilt()`, `servoLimits(...)` |
 | WiFi settings | `attachSettings(NvsSettings&)` | `hasWifiSettings()`, `wifiSettings(info)` (without the password), `saveWifiSettings(role, ssid, password)`, `clearWifiSettings()` |
 | OTA | `attachOta(CamOta&)` | `hasOta()`, `otaInProgress()`, `otaInfo(info)`, `otaAuthorize(password)`, `otaBegin(size)`, `otaWrite(data, len)`, `otaEnd(ok)` |
@@ -353,6 +355,10 @@ See `examples/Basic/main.cpp`: configuration, `cam.begin(config)` in `setup()` a
 | `GET http://<IP>/wifi/settings` | JSON: current network, `source` (saved/default), `fallback`, saved settings (`mode`, `ssid`, `hasPassword` - never the password) |
 | `POST http://<IP>/wifi/save` | form fields `mode` (sta/ap), `ssid`, `password`; validated, reply `{"ok":..,"message":".."}` |
 | `POST http://<IP>/wifi/clear` | erase the saved settings |
+| `http://<IP>/photos` | photo browser of the SD card (`SD_ON`): 100 per page, newest first, open and delete |
+| `GET http://<IP>/photos/list?page=N` | JSON `{"items":[{"name","size"}],"total","page","pages","perPage"}`; 503 without a card |
+| `GET http://<IP>/photo?name=IMG_00001.jpg` | the photo (image/jpeg), streamed from the card in 4 KB chunks |
+| `POST http://<IP>/photo/delete?name=IMG_00001.jpg` | delete a photo; JSON `{"ok","message"}` |
 | `http://<IP>/update` | firmware update page (`OTA_ON`, HTTP Basic Auth with `OTA_PASSWORD`) |
 | `POST http://<IP>/update` | raw `firmware.bin` body; streamed into the OTA slot, verified, then restart |
 | `http://<IP>:81/stream` | MJPEG stream (separate httpd instance) |
@@ -478,6 +484,12 @@ Wnioski:
 - Gniazdo microSD na ESP32-CAM AI Thinker jest podłączone właśnie do tych pinów, razem z rezystorami podciągającymi.
 - Własne gniazdo SD na innej płytce z klasycznym ESP32 musi być podłączone dokładnie do tych pinów, z rezystorami podciągającymi 10 kΩ na CMD i D0–D3. Karta na innych pinach wymagałaby SPI i osobnej klasy opartej na `SD.h`.
 - Karta musi być sformatowana jako **FAT32** i włożona **przed włączeniem zasilania**. `begin()` wykrywa ją tylko przy starcie.
+- **Przeglądarka zdjęć** (`/photos`):
+  - Jedno przejście przez katalog zapamiętuje tylko numer i rozmiar każdego pliku `.jpg/.jpeg`; nazwę tylko dla plików nienazwanych `IMG_nnnnn.jpg`. Potem sortuje od najnowszych i wysyła wyłącznie żądaną stronę 100 pozycji jako JSON w kawałkach.
+  - Zdjęcia są wysyłane z karty kawałkami po 4 KB, nigdy w całości z RAM.
+  - Nazwy plików są sprawdzane przy otwieraniu i usuwaniu: tylko sama nazwa w katalogu zdjęć, bez `/`, `\` i `..`, tylko `.jpg/.jpeg`.
+  - Listowanie i usuwanie idą przez mutex `EspCamera`, a odczyt nie, bo FATFS obsługuje wiele zadań jednocześnie. Dzięki temu wolne pobieranie nie blokuje innych poleceń, a nic z tego nie blokuje strumienia.
+  - Strona nie ma logowania, więc każdy w sieci lokalnej może usuwać zdjęcia.
 - Na ESP32-S3 piny SDMMC można wybrać dowolnie (`SD_MMC.setPins()`), ale ta biblioteka obecnie tego nie obsługuje.
 - GPIO2 musi być w stanie niskim lub nieustalonym przy wgrywaniu firmware. Karta włożona w gniazdo czasem to zakłóca. Jeśli wgrywanie się nie udaje, wyjmij kartę na ten czas.
 - **GPIO12 to pin strapping**, który przy starcie ustala napięcie pamięci flash (stan niski = 3,3 V, prawidłowo). Zwykle działa bez zmian: GPIO12 ma wewnętrzny rezystor ściągający, a wejście typowego serwa (SG90, MG90S) nie podciąga linii do plusa. Gdyby płytka mimo to nie startowała z podłączonym serwem, dodaj **rezystor 10 kΩ między GPIO12 a GND**. Wymusza on stan niski przy starcie i nie przeszkadza w sterowaniu serwem. Rozwiązanie trwałe, ale **nieodwracalne**: `espefuse.py set_flash_voltage 3.3V` ustawia napięcie flash w eFuse, a wtedy GPIO12 przestaje być pinem strapping.
@@ -513,6 +525,7 @@ Oba serwery są, tak jak strona WWW, dodatkami korzystającymi wyłącznie z `Es
 | `servo center` | serwa | pozycja środkowa |
 | `sd` | SD | liczba zdjęć, wolne MB, ostatnie zdjęcie |
 | `sd list [N]` | SD | ostatnie N zdjęć (domyślnie 10) z rozmiarami |
+| `sd delete <nazwa>` | SD | usunięcie zdjęcia, np. `sd delete IMG_00012.jpg` (tylko sama nazwa .jpg/.jpeg) |
 | `ota` | OTA | stan OTA: hasło ustawione, bieżąca partycja, następny slot i jego rozmiar |
 | `restart yes` | – | restart płytki (wymaga potwierdzenia `yes`) |
 | `quit` / `exit` | – | rozłączenie (Telnet) |
@@ -641,7 +654,7 @@ Moduły dołącza się do kamery przez referencję, a nie tworzy wewnątrz niej.
 |---|---|---|
 | wszystkie | – | `features()` zwraca `{led, sd, servos, settings, ota}`: włączone w `EspCamFeatures.h` **i** poprawnie uruchomione (np. karta włożona) |
 | lampa | `attachLed(CamLed&)` | `hasLed()`, `setLed(bool)`, `ledOn()` |
-| karta SD | `attachSd(CamSdCard&)` | `hasSd()`, `savePhotoToSd(&bajty)` (zwraca ścieżkę pliku), `sdPhotoCount()`, `sdFreeBytes()`, `sdLastPhoto()`, `sdListPhotos(Print&, N)` |
+| karta SD | `attachSd(CamSdCard&)` | `hasSd()`, `savePhotoToSd(&bajty)` (zwraca ścieżkę pliku), `sdPhotoCount()`, `sdFreeBytes()`, `sdLastPhoto()`, `sdListPhotos(Print&, N)`, `sdListPhotoPage(strona, naStronę, fn)`, `sdReadPhoto(nazwa, sink)`, `sdDeletePhoto(nazwa)` |
 | serwa | `attachServos(CamServos&)` | `hasServos()`, `setPan(deg)`, `setTilt(deg)`, `centerServos()`, `pan()`, `tilt()`, `servoLimits(...)` |
 | ustawienia WiFi | `attachSettings(NvsSettings&)` | `hasWifiSettings()`, `wifiSettings(info)` (bez hasła), `saveWifiSettings(tryb, ssid, hasło)`, `clearWifiSettings()` |
 | OTA | `attachOta(CamOta&)` | `hasOta()`, `otaInProgress()`, `otaInfo(info)`, `otaAuthorize(hasło)`, `otaBegin(rozmiar)`, `otaWrite(dane, długość)`, `otaEnd(ok)` |
@@ -715,6 +728,10 @@ Zobacz `examples/Basic/main.cpp`: konfiguracja, `cam.begin(config)` w `setup()` 
 | `GET http://<IP>/wifi/settings` | JSON: obecna sieć, `source` (saved/default), `fallback`, zapisane ustawienia (`mode`, `ssid`, `hasPassword`, nigdy samo hasło) |
 | `POST http://<IP>/wifi/save` | pola formularza `mode` (sta/ap), `ssid`, `password`; walidacja, odpowiedź `{"ok":..,"message":".."}` |
 | `POST http://<IP>/wifi/clear` | skasowanie zapisanych ustawień |
+| `http://<IP>/photos` | przeglądarka zdjęć z karty SD (`SD_ON`): 100 na stronę, od najnowszych, otwieranie i usuwanie |
+| `GET http://<IP>/photos/list?page=N` | JSON `{"items":[{"name","size"}],"total","page","pages","perPage"}`; 503 bez karty |
+| `GET http://<IP>/photo?name=IMG_00001.jpg` | zdjęcie (image/jpeg), wysyłane z karty kawałkami po 4 KB |
+| `POST http://<IP>/photo/delete?name=IMG_00001.jpg` | usunięcie zdjęcia; JSON `{"ok","message"}` |
 | `http://<IP>/update` | strona aktualizacji programu (`OTA_ON`, HTTP Basic Auth z `OTA_PASSWORD`) |
 | `POST http://<IP>/update` | surowy `firmware.bin` w treści; zapis do slotu OTA, weryfikacja, restart |
 | `http://<IP>:81/stream` | strumień MJPEG (osobna instancja httpd) |

@@ -4,6 +4,7 @@
  *
  * - httpPort:   page, /control, /status, /capture, /save (photo to SD card),
  *               /wifi pages and API (WiFi settings, with WIFI_SETTINGS_ON),
+ *               /photos browser of the SD card (with SD_ON),
  *               /update firmware upload (with OTA_ON, HTTP Basic Auth with OTA_PASSWORD)
  * - streamPort: /stream (MJPEG) in a separate httpd instance, so the page never blocks the stream
  *
@@ -126,6 +127,38 @@ class CamWebServer {
    * @return ESP_OK (500 if NVS could not be cleared).
    */
   static esp_err_t wifiClearHandler(httpd_req_t *req);
+#endif
+
+#if SD_ON
+  /**
+   * @brief GET /photos - page listing the photos on the SD card (pages of 100).
+   * @param req Request.
+   * @return ESP_OK or a send error.
+   */
+  static esp_err_t photosPageHandler(httpd_req_t *req);
+
+  /**
+   * @brief GET /photos/list?page=N - JSON page of photos, newest first:
+   *        {"items":[{"name","size"}...],"total","page","pages","perPage"}. Sent in chunks while listing.
+   * @param req Request.
+   * @return ESP_OK (503 JSON without a card).
+   */
+  static esp_err_t photosListHandler(httpd_req_t *req);
+
+  /**
+   * @brief GET /photo?name=X - streams a photo (image/jpeg) from the card in chunks.
+   *        The name must be a plain .jpg/.jpeg file name in the photo directory.
+   * @param req Request.
+   * @return ESP_OK, ESP_FAIL after 400/404, or when the client disconnects.
+   */
+  static esp_err_t photoHandler(httpd_req_t *req);
+
+  /**
+   * @brief POST /photo/delete?name=X - deletes a photo (name validated).
+   * @param req Request.
+   * @return ESP_OK (JSON {"ok","message"}; 400 for an invalid/missing file, 503 without a card).
+   */
+  static esp_err_t photoDeleteHandler(httpd_req_t *req);
 #endif
 
 #if OTA_ON

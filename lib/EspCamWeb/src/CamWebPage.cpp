@@ -82,6 +82,7 @@ a{color:var(--accent)}
       <label class="t">SD card</label>
       <div class="btns"><button id="save">Save photo to SD</button></div>
       <div class="foot" id="sdInfo"></div>
+      <div class="foot"><a href="/photos">Browse photos</a></div>
     </div>
     <div class="foot" id="info"></div>
     <div class="foot"><a href="/capture" target="_blank">Snapshot (JPEG)</a> · <a id="raw" target="_blank">Raw stream</a></div>
@@ -411,6 +412,107 @@ $('go').onclick = () => {
 )rawliteral";
 
 const size_t UPDATE_HTML_LEN = sizeof(UPDATE_HTML) - 1;
+#endif
+
+#if SD_ON
+const char PHOTOS_HTML[] PROGMEM = R"rawliteral(<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ESP32-CAM photos</title>
+<style>
+:root{--bg:#111418;--panel:#1b2027;--line:#2b323c;--text:#e6e9ee;--muted:#8b95a3;--accent:#3b82f6;--ok:#22c55e;--err:#ef4444}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+header{display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-bottom:1px solid var(--line)}
+h1{font-size:18px;margin:0}
+main{display:flex;flex-direction:column;gap:12px;padding:16px;max-width:760px;margin:0 auto}
+section{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:6px 14px}
+table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+td{padding:6px 4px;border-bottom:1px solid var(--line)}
+tr:last-child td{border-bottom:0}
+td.size{color:var(--muted);text-align:right;white-space:nowrap}
+td.act{text-align:right;width:1%}
+button{background:#232a33;color:var(--text);border:1px solid var(--line);border-radius:6px;padding:6px 10px;font:inherit;cursor:pointer}
+button:disabled{opacity:.4;cursor:default}
+button.danger{border-color:var(--err);color:var(--err)}
+.pager{display:flex;justify-content:space-between;align-items:center;gap:8px}
+a{color:var(--accent)}
+.foot{color:var(--muted);font-size:12px}
+#msg.ok{color:var(--ok)}#msg.err{color:var(--err)}
+</style>
+</head>
+<body>
+<header><h1>Photos</h1><a href="/">&larr; Camera</a></header>
+<main>
+  <div class="pager">
+    <button id="prev">&larr; Previous</button>
+    <span id="info" class="foot">Loading...</span>
+    <button id="next">Next &rarr;</button>
+  </div>
+  <div id="msg"></div>
+  <section><table><tbody id="list"></tbody></table></section>
+  <div class="foot">Newest first, 100 per page. Click a name to open the photo in a new tab.</div>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+let page = Math.max(1, parseInt(new URLSearchParams(location.search).get('page')) || 1), pages = 1;
+
+function msg(text, ok) { $('msg').textContent = text; $('msg').className = ok ? 'ok' : 'err'; }
+function kb(n) { return n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB'; }
+
+async function load() {
+  try {
+    const r = await fetch('/photos/list?page=' + page);
+    const d = await r.json();
+    if (!r.ok) { msg(d.message || 'Cannot read the card', false); $('info').textContent = ''; return; }
+    pages = Math.max(1, d.pages);
+    if (page > pages) { page = pages; return load(); }
+    history.replaceState(null, '', '?page=' + page);
+    $('info').textContent = `Page ${page} of ${pages} · ${d.total} photo${d.total === 1 ? '' : 's'}`;
+    $('prev').disabled = page <= 1;
+    $('next').disabled = page >= pages;
+    const list = $('list');
+    list.innerHTML = '';
+    if (!d.items.length) {
+      const tr = list.insertRow(); tr.insertCell().textContent = 'No photos on the card';
+    }
+    d.items.forEach(p => {
+      const tr = list.insertRow();
+      const a = document.createElement('a');
+      a.href = '/photo?name=' + encodeURIComponent(p.name);
+      a.target = '_blank';
+      a.textContent = p.name;
+      tr.insertCell().append(a);
+      const size = tr.insertCell(); size.className = 'size'; size.textContent = kb(p.size);
+      const act = tr.insertCell(); act.className = 'act';
+      const del = document.createElement('button');
+      del.className = 'danger'; del.textContent = 'Delete';
+      del.onclick = () => remove(p.name);
+      act.append(del);
+    });
+  } catch (e) { msg('Cannot read the photo list', false); }
+}
+
+async function remove(name) {
+  if (!confirm('Delete ' + name + '?')) return;
+  try {
+    const r = await (await fetch('/photo/delete?name=' + encodeURIComponent(name), { method: 'POST' })).json();
+    msg(r.message, r.ok);
+    load();
+  } catch (e) { msg('Delete failed', false); }
+}
+
+$('prev').onclick = () => { if (page > 1) { page--; load(); } };
+$('next').onclick = () => { if (page < pages) { page++; load(); } };
+load();
+</script>
+</body>
+</html>
+)rawliteral";
+
+const size_t PHOTOS_HTML_LEN = sizeof(PHOTOS_HTML) - 1;
 #endif
 
 }  // namespace espcamweb

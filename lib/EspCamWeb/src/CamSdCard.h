@@ -11,6 +11,7 @@
 #pragma once
 
 #include <Arduino.h>
+#include <functional>
 #include "EspCamWebConfig.h"
 
 #if SD_ON
@@ -52,6 +53,46 @@ class CamSdCard {
    * @return Number of entries printed.
    */
   uint32_t listPhotos(Print &out, uint32_t maxCount) const;
+
+  /// Callback receiving one photo of a listing page: file name (without directory) and size in bytes.
+  using PhotoFn = std::function<void(const String &name, uint32_t size)>;
+
+  /**
+   * @brief Lists one page of .jpg/.jpeg files in the photo directory, newest (highest number) first.
+   *
+   * One pass over the directory keeps only the number and size of each file (plus the name of files
+   * not following the IMG_nnnnn.jpg pattern), then reports just the requested page.
+   * @param page    Page number, 1-based.
+   * @param perPage Entries per page.
+   * @param fn      Called for each entry of the page.
+   * @return Total number of photo files.
+   */
+  uint32_t listPage(uint32_t page, uint32_t perPage, const PhotoFn &fn) const;
+
+  /**
+   * @brief Checks that a name is a plain photo file name: 1-64 characters, no path separators,
+   *        no "..", ending with .jpg or .jpeg.
+   * @param name File name from the client.
+   * @return true if safe to use inside the photo directory.
+   */
+  static bool isValidName(const String &name);
+
+  /**
+   * @brief Reads a photo in chunks and passes them to @p sink (the file is never loaded whole).
+   * @param name File name (validated).
+   * @param sink Receives each chunk; return false to stop.
+   * @param[out] size Optional: file size in bytes.
+   * @return false if the name is invalid, the file is missing or the sink stopped.
+   */
+  bool readPhoto(const String &name, const std::function<bool(const uint8_t *, size_t)> &sink,
+                 size_t *size = nullptr) const;
+
+  /**
+   * @brief Deletes a photo.
+   * @param name File name (validated).
+   * @return nullptr on success, otherwise an English error message.
+   */
+  const char *deletePhoto(const String &name);
 
   /// @return Path of the last photo saved since start-up, or an empty String.
   const String &lastPhoto() const { return lastPhoto_; }
