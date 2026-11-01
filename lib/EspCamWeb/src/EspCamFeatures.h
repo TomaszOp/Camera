@@ -15,7 +15,7 @@
 #define LED_ON          1  ///< Flash LED lamp.
 #define SD_ON           1  ///< microSD card for photos (on-board slot, SD_MMC, 1-bit mode).
                            ///< SDMMC pins are fixed in the ESP32: CLK 14, CMD 15, D0 2 - not configurable.
-#define SERVO_MOTORS_ON 0  ///< Two servos: horizontal (pan) and vertical (tilt).
+#define SERVO_MOTORS_ON 1  ///< Two servos: horizontal (pan) and vertical (tilt).
 
 // ---------- WiFi settings ----------
 #define WIFI_SETTINGS_ON 1  ///< WiFi mode/SSID/password saved in NVS, editable via /wifi, COM and Telnet.
